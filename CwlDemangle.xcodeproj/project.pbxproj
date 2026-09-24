@@ -3,16 +3,11 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 46;
+	objectVersion = 73;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		C98DE90C23F7B31900A3A287 /* CwlDemangleAdditionalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C98DE90B23F7B31900A3A287 /* CwlDemangleAdditionalTests.swift */; };
-		C9A6CE261FBBED8700F9D9A5 /* CwlDemangle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A6CE251FBBED8700F9D9A5 /* CwlDemangle.swift */; };
-		C9A6CE271FBBEE1800F9D9A5 /* CwlDemangle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A6CE251FBBED8700F9D9A5 /* CwlDemangle.swift */; };
-		C9E054DE1CD4AE3F001658AB /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E054DD1CD4AE3F001658AB /* main.swift */; };
-		C9E054E71CD4B2F2001658AB /* manglings.txt in CopyFiles */ = {isa = PBXBuildFile; fileRef = C9E054E61CD4B2DF001658AB /* manglings.txt */; };
-		C9E054EF1CD4DDA1001658AB /* CwlDemangleSwiftProjectDerivedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E054EE1CD4DDA1001658AB /* CwlDemangleSwiftProjectDerivedTests.swift */; };
+		2B1F787830651D9900730327 /* libCwlDemangle.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C9E054DA1CD4AE3F001658AB /* libCwlDemangle.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -22,22 +17,20 @@
 			dstPath = "";
 			dstSubfolderSpec = 16;
 			files = (
-				C9E054E71CD4B2F2001658AB /* manglings.txt in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		C98DE90B23F7B31900A3A287 /* CwlDemangleAdditionalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CwlDemangleAdditionalTests.swift; sourceTree = "<group>"; };
-		C9A6CE251FBBED8700F9D9A5 /* CwlDemangle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CwlDemangle.swift; sourceTree = "<group>"; };
-		C9E054DA1CD4AE3F001658AB /* CwlDemangle */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = CwlDemangle; sourceTree = BUILT_PRODUCTS_DIR; };
-		C9E054DD1CD4AE3F001658AB /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
-		C9E054E61CD4B2DF001658AB /* manglings.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = manglings.txt; sourceTree = "<group>"; };
+		C9E054DA1CD4AE3F001658AB /* libCwlDemangle.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libCwlDemangle.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9E054EC1CD4DDA1001658AB /* CwlDemangleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CwlDemangleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		C9E054EE1CD4DDA1001658AB /* CwlDemangleSwiftProjectDerivedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CwlDemangleSwiftProjectDerivedTests.swift; sourceTree = "<group>"; };
-		C9E054F01CD4DDA1001658AB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		2B1F786430651D8500730327 /* CwlDemangle */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (); explicitFileTypes = {}; explicitFolders = (); path = CwlDemangle; sourceTree = "<group>"; };
+		2B1F787130651D9900730327 /* CwlDemangleTests */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (); explicitFileTypes = {}; explicitFolders = (); path = CwlDemangleTests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		C9E054D71CD4AE3F001658AB /* Frameworks */ = {
@@ -51,6 +44,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2B1F787830651D9900730327 /* libCwlDemangle.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -60,8 +54,8 @@
 		C9E054D11CD4AE3F001658AB = {
 			isa = PBXGroup;
 			children = (
-				C9E054DC1CD4AE3F001658AB /* CwlDemangle */,
-				C9E054ED1CD4DDA1001658AB /* CwlDemangleTests */,
+				2B1F786430651D8500730327 /* CwlDemangle */,
+				2B1F787130651D9900730327 /* CwlDemangleTests */,
 				C9E054DB1CD4AE3F001658AB /* Products */,
 			);
 			sourceTree = "<group>";
@@ -69,30 +63,10 @@
 		C9E054DB1CD4AE3F001658AB /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				C9E054DA1CD4AE3F001658AB /* CwlDemangle */,
+				C9E054DA1CD4AE3F001658AB /* libCwlDemangle.a */,
 				C9E054EC1CD4DDA1001658AB /* CwlDemangleTests.xctest */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		C9E054DC1CD4AE3F001658AB /* CwlDemangle */ = {
-			isa = PBXGroup;
-			children = (
-				C9A6CE251FBBED8700F9D9A5 /* CwlDemangle.swift */,
-				C9E054DD1CD4AE3F001658AB /* main.swift */,
-				C9E054E61CD4B2DF001658AB /* manglings.txt */,
-			);
-			path = CwlDemangle;
-			sourceTree = "<group>";
-		};
-		C9E054ED1CD4DDA1001658AB /* CwlDemangleTests */ = {
-			isa = PBXGroup;
-			children = (
-				C9E054EE1CD4DDA1001658AB /* CwlDemangleSwiftProjectDerivedTests.swift */,
-				C98DE90B23F7B31900A3A287 /* CwlDemangleAdditionalTests.swift */,
-				C9E054F01CD4DDA1001658AB /* Info.plist */,
-			);
-			path = CwlDemangleTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -110,10 +84,13 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				2B1F786430651D8500730327 /* CwlDemangle */,
+			);
 			name = CwlDemangle;
 			productName = CwlDemangle;
-			productReference = C9E054DA1CD4AE3F001658AB /* CwlDemangle */;
-			productType = "com.apple.product-type.tool";
+			productReference = C9E054DA1CD4AE3F001658AB /* libCwlDemangle.a */;
+			productType = "com.apple.product-type.library.static";
 		};
 		C9E054EB1CD4DDA1001658AB /* CwlDemangleTests */ = {
 			isa = PBXNativeTarget;
@@ -126,6 +103,10 @@
 			buildRules = (
 			);
 			dependencies = (
+				2B1F787930651D9900730327 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				2B1F787130651D9900730327 /* CwlDemangleTests */,
 			);
 			name = CwlDemangleTests;
 			productName = CwlDemangleTests;
@@ -153,7 +134,6 @@
 				};
 			};
 			buildConfigurationList = C9E054D51CD4AE3F001658AB /* Build configuration list for PBXProject "CwlDemangle" */;
-			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -161,6 +141,7 @@
 				en,
 			);
 			mainGroup = C9E054D11CD4AE3F001658AB;
+			preferredProjectObjectVersion = 46;
 			productRefGroup = C9E054DB1CD4AE3F001658AB /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -186,8 +167,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C9E054DE1CD4AE3F001658AB /* main.swift in Sources */,
-				C9A6CE261FBBED8700F9D9A5 /* CwlDemangle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -195,13 +174,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C9A6CE271FBBEE1800F9D9A5 /* CwlDemangle.swift in Sources */,
-				C98DE90C23F7B31900A3A287 /* CwlDemangleAdditionalTests.swift in Sources */,
-				C9E054EF1CD4DDA1001658AB /* CwlDemangleSwiftProjectDerivedTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2B1F787930651D9900730327 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C9E054D91CD4AE3F001658AB /* CwlDemangle */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C9E054DF1CD4AE3F001658AB /* Debug */ = {
@@ -324,7 +307,8 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "-";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -333,8 +317,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = CwlDemangleTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.cocoawithlove.CwlDemangleTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -345,11 +334,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = CwlDemangleTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.cocoawithlove.CwlDemangleTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
