@@ -56,4 +56,29 @@ struct SwiftDemangleAdditionalTests {
         #expect(try parseMangledSwiftSymbol(input).print(using: options) == output)
     }
 
+    @Test func testClassifiedSymbolPrinting() throws {
+        let classifiedOptions = options.union(.classify)
+        let examples: [(mangled: String, demangled: String)] = [
+            ("_TToFC3foo3bar3basfT3zimCS_3zim_T_", "{T:_TFC3foo3bar3basfT3zimCS_3zim_T_,C} @objc foo.bar.bas(zim: foo.zim) -> ()"),
+            ("_TTOFSC3fooFTSdSd_Sd", "{T:_TFSC3fooFTSdSd_Sd} @nonobjc __C_Synthesized.foo(Swift.Double, Swift.Double) -> Swift.Double"),
+            ("$s4main3fooyySiFyyXEfU_TA.1", "{T:} partial apply forwarder for closure #1 () -> () in main.foo(Swift.Int) -> () with unmangled suffix \".1\""),
+            ("_TwalC3foo3bar", "{C} allocateBuffer value witness for foo.bar"),
+            ("_TFC3foo3bar3basfT3zimCS_3zim_T_", "foo.bar.bas(zim: foo.zim) -> ()")
+        ]
+        for example in examples {
+            #expect(try parseMangledSwiftSymbol(example.mangled).print(using: classifiedOptions) == example.demangled, "\(example.mangled)")
+            #expect(demangleSwiftSymbol(example.mangled, using: classifiedOptions) == example.demangled, "\(example.mangled)")
+        }
+
+        let asyncContinuation = "$sxIeghHr_xs5Error_pIegHrzo_s8SendableRzs5NeverORs_r0_lTRTATQ0_"
+        let asyncTarget = "$sxIeghHr_xs5Error_pIegHrzo_s8SendableRzs5NeverORs_r0_lTR"
+        #expect(demangleSwiftSymbol(asyncContinuation, using: classifiedOptions).hasPrefix("{T:\(asyncTarget)} "))
+    }
+
+    @Test func testClassificationWhenParsingFails() {
+        let classifiedOptions = options.union(.classify)
+        #expect(demangleSwiftSymbol("_TTo", using: classifiedOptions) == "{T:_T} _TTo")
+        #expect(demangleSwiftSymbol("not-a-swift-symbol", using: classifiedOptions) == "{N} not-a-swift-symbol")
+        #expect(demangleSwiftSymbol("_TTo") == "_TTo")
+    }
 }

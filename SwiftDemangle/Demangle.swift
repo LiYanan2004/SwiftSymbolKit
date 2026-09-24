@@ -27,6 +27,7 @@ public struct SymbolPrintOptions: OptionSet {
 	public static let displayObjCModule = SymbolPrintOptions(rawValue: 1 << 18)
 	public static let printForTypeName = SymbolPrintOptions(rawValue: 1 << 19)
 	public static let showClosureSignature = SymbolPrintOptions(rawValue: 1 << 20)
+	public static let classify = SymbolPrintOptions(rawValue: 1 << 21)
 	
 	public init(rawValue: Int) {
 		self.rawValue = rawValue
@@ -209,6 +210,7 @@ public struct SwiftSymbol {
 	public let kind: Kind
 	public var children: [SwiftSymbol]
 	public let contents: Contents
+	var originalMangling: String?
 	
 	public enum Contents {
 		case none
@@ -220,6 +222,7 @@ public struct SwiftSymbol {
 		self.kind = kind
 		self.children = children
 		self.contents = contents
+		self.originalMangling = nil
 	}
 	
 	init(kind: Kind, child: SwiftSymbol) {
