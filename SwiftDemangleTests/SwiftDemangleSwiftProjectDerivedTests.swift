@@ -1,6 +1,6 @@
 //
-//  CwlDemangleSwiftProjectDerivedTests.swift
-//  CwlDemangleSwiftProjectDerivedTests
+//  SwiftDemangleSwiftProjectDerivedTests.swift
+//  SwiftDemangleSwiftProjectDerivedTests
 //
 //  Created by Matt Gallagher on 2016/04/30.
 //  Copyright © 2016 Matt Gallagher. All rights reserved.
@@ -11,10 +11,10 @@
 //  See http://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
 //
 
-@testable import CwlDemangle
+@testable import SwiftDemangle
 import Testing
 
-struct CwlDemangleSwiftProjectDerivedTests {
+struct SwiftDemangleSwiftProjectDerivedTests {
     @Test(arguments: ManglingFixtures.validExamples)
     func demangles(example: ManglingFixtures.Example) throws {
         let parsed = try parseMangledSwiftSymbol(example.input)

@@ -1,15 +1,15 @@
 //
-//  CwlDemangleAdditionalTests.swift
-//  CwlDemangleTests
+//  SwiftDemangleAdditionalTests.swift
+//  SwiftDemangleTests
 //
 //  Created by Matt Gallagher on 15/2/20.
 //  Copyright © 2020 Matt Gallagher. All rights reserved.
 //
 
-@testable import CwlDemangle
+@testable import SwiftDemangle
 import Testing
 
-struct CwlDemangleAdditionalTests {
+struct SwiftDemangleAdditionalTests {
     private let options = SymbolPrintOptions.default.union(.synthesizeSugarOnTypes)
 
     @Test func testUnicodeProblem() throws {
@@ -55,4 +55,5 @@ struct CwlDemangleAdditionalTests {
         let output = "base conformance descriptor for AppIntents.IndexedEntity: AppIntents.AppEntity"
         #expect(try parseMangledSwiftSymbol(input).print(using: options) == output)
     }
+
 }

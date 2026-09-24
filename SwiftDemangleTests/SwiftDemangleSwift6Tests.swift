@@ -1,7 +1,7 @@
-@testable import CwlDemangle
+@testable import SwiftDemangle
 import Testing
 
-struct CwlDemangleSwift6Tests {
+struct SwiftDemangleSwift6Tests {
 	private let options = SymbolPrintOptions.default.union(.synthesizeSugarOnTypes)
 
 	private func contains(_ kind: SwiftSymbol.Kind, in symbol: SwiftSymbol) -> Bool {

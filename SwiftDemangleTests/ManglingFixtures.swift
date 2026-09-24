@@ -1,6 +1,6 @@
 //
 //  ManglingFixtures.swift
-//  CwlDemangleTests
+//  SwiftDemangleTests
 //
 //  Examples from swift/test/Demangle/inputs/manglings.txt.
 //

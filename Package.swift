@@ -3,20 +3,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "CwlDemangle",
+    name: "SwiftDemangle",
     products: [
-        .library(name: "CwlDemangle", targets: ["CwlDemangle"]),
+        .library(name: "SwiftDemangle", targets: ["SwiftDemangle"]),
     ],
     targets: [
         .target(
-            name: "CwlDemangle",
-            path: "CwlDemangle",
-            sources: ["CwlDemangle.swift"]
+            name: "SwiftDemangle",
+            path: "SwiftDemangle"
         ),
         .testTarget(
-            name: "CwlDemangleTests",
-            dependencies: ["CwlDemangle"],
-            path: "CwlDemangleTests"
+            name: "SwiftDemangleTests",
+            dependencies: ["SwiftDemangle"],
+            path: "SwiftDemangleTests"
         ),
     ],
     swiftLanguageModes: [.v5]
