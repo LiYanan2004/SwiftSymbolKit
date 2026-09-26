@@ -23,6 +23,7 @@ extension SwiftSymbol {
 		case .boundGenericProtocol: fallthrough
 		case .boundGenericStructure: fallthrough
 		case .boundGenericTypeAlias: fallthrough
+		case .builtinBorrow: fallthrough
 		case .builtinTypeName: fallthrough
 		case .builtinTupleType: fallthrough
 		case .builtinFixedArray: fallthrough
@@ -71,7 +72,7 @@ extension SwiftSymbol {
 	var needSpaceBeforeType: Bool {
 		switch self.kind {
 		case .type: return children.first?.needSpaceBeforeType ?? false
-		case .functionType, .noEscapeFunctionType, .uncurriedFunctionType, .dependentGenericType: return false
+		case .calledOnceFunctionType, .functionType, .noEscapeFunctionType, .uncurriedFunctionType, .dependentGenericType: return false
 		default: return true
 		}
 	}

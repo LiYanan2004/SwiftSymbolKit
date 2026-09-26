@@ -44,7 +44,8 @@ let package = Package(
         .testTarget(
             name: "SwiftDemangleTests",
             dependencies: ["SwiftDemangle"],
-            path: "Tests/SwiftDemangleTests"
+            path: "Tests/SwiftDemangleTests",
+            resources: [.copy("Fixtures")]
         ),
     ],
     swiftLanguageModes: [.v5]

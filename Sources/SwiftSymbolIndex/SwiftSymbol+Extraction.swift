@@ -34,9 +34,9 @@ internal extension SwiftSymbol {
         case .globalGetter: return .getter
         case .setter: return .setter
         case .readAccessor: return .read
-        case .read2Accessor: return .read
+        case .read2Accessor, .yieldingBorrowAccessor: return .read
         case .modifyAccessor: return .modify
-        case .modify2Accessor: return .modify
+        case .modify2Accessor, .yieldingMutateAccessor: return .modify
         case .materializeForSet: return .materializeForSet
         case .willSet: return .willSet
         case .didSet: return .didSet

@@ -11,9 +11,9 @@ struct SwiftDemangleSwift6Tests {
 	@Test func testSwiftSixTwoManglings() throws {
 		let examples: [(mangled: String, demangled: String)] = [
 			("$sBAD", "Builtin.ImplicitActor"),
-			("$s5thing1PP1sAA1SVvxTwc", "coro function pointer to thing.P.s.modify2 : thing.S"),
-			("$s7Library1BC1iSivxTwd", "default override of Library.B.i.modify2 : Swift.Int"),
-			("$s7Library1BC1iSivxTwdTwc", "coro function pointer to default override of Library.B.i.modify2 : Swift.Int"),
+			("$s5thing1PP1sAA1SVvxTwc", "coro function pointer to thing.P.s.yielding_mutate : thing.S"),
+			("$s7Library1BC1iSivxTwd", "default override of Library.B.i.yielding_mutate : Swift.Int"),
+			("$s7Library1BC1iSivxTwdTwc", "coro function pointer to default override of Library.B.i.yielding_mutate : Swift.Int"),
 			("$s3use1xAA3OfPVy3lib1GVyAA1fQryFQOyQo_GAjE1PAAxAeKHD1_AIHO_HCg_Gvp", "use.x : use.OfP<lib.G<<<opaque return type of use.f() -> some>>.0>>"),
 			("_T0SqWOB", "outlined init with take of Swift.Optional"),
 			("_T0SqWOb", "outlined init with take of Swift.Optional"),

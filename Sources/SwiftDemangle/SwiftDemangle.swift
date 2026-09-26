@@ -26,6 +26,8 @@ public func parseMangledSwiftSymbol(_ mangled: String, isType: Bool = false) thr
 /// - Parameters:
 ///   - mangled: the collection of `UnicodeScalars` to be parsed ("isType` is false, the string should start with a Swift Symbol prefix, _T, _$S or $S).
 ///   - isType: if true, no prefix is parsed and, on completion, the first item on the parse stack is returned.
+///   - symbolicReferenceResolver: Resolves a signed relative reference and the scalar offset of its four-byte payload.
+///     Binary payload bytes must be represented by scalars in `0...255`; the preceding scalar identifies the reference kind.
 /// - Returns: the successfully parsed result
 /// - Throws: a SwiftSymbolParseError error that contains parse position when the error occurred.
 public func parseMangledSwiftSymbol<C: Collection>(_ mangled: C, isType: Bool = false, symbolicReferenceResolver: ((Int32, Int) throws -> SwiftSymbol)? = nil) throws -> SwiftSymbol where C.Iterator.Element == UnicodeScalar {
@@ -34,8 +36,10 @@ public func parseMangledSwiftSymbol<C: Collection>(_ mangled: C, isType: Bool = 
 	if isType {
 		return try demangler.demangleType()
 	}
-	var symbol = try getManglingPrefixLength(mangled) != 0 ? demangler.demangleSymbol() : demangler.demangleSwift3TopLevelSymbol()
-	symbol.originalMangling = String(String.UnicodeScalarView(mangled))
+	let mangledName = String(String.UnicodeScalarView(mangled))
+	let isModernSymbol = getManglingPrefixLength(mangled) != 0 || mangledName.hasPrefix("async_Main") || mangledName.hasPrefix("_async_Main")
+	var symbol = try isModernSymbol ? demangler.demangleSymbol() : demangler.demangleSwift3TopLevelSymbol()
+	symbol.originalMangling = mangledName
 	return symbol
 }
 
@@ -75,7 +79,7 @@ extension SwiftSymbol: CustomStringConvertible {
 private extension SwiftSymbol {
 	static func classificationPrefix(for mangledName: String, symbol: SwiftSymbol?) -> String {
 		var classifications: [String] = []
-		if !mangledName.hasPrefix("_T") && getManglingPrefixLength(mangledName.unicodeScalars) == 0 {
+		if !mangledName.hasPrefix("async_Main") && !mangledName.hasPrefix("_async_Main") && !mangledName.hasPrefix("_T") && getManglingPrefixLength(mangledName.unicodeScalars) == 0 {
 			classifications.append("N")
 		}
 		if isThunkSymbol(mangledName, symbol: symbol) {

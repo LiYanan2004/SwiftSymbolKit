@@ -4,6 +4,19 @@ import Foundation
 
 extension SwiftSymbol {
 	public enum Kind {
+		case asyncMainEntryPoint
+		case borrowAccessor
+		case mutateAccessor
+		case yieldingBorrowAccessor
+		case yieldingMutateAccessor
+		case builtinBorrow
+		case checkedObjCAsyncCompletionHandlerImpl
+		case calledOnceFunctionType
+		case implCalledOnceFunction
+		case implNonisolatedNonsendingIsolation
+		case propertyWrappedFieldInitAccessor
+		case representationChanged
+		case yieldTypes
 		case allocator
 		case accessibleFunctionRecord
 		case accessorFunctionReference
@@ -276,6 +289,7 @@ extension SwiftSymbol {
 		case packProtocolConformance
 		case partialApplyForwarder
 		case partialApplyObjCForwarder
+		case preambleAttachedMacroExpansion
 		case peerAttachedMacroExpansion
 		case postfixOperator
 		case prefixOperator

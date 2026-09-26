@@ -48,6 +48,9 @@ enum FunctionSigSpecializationParamKind: UInt64 {
 	case boxToStack = 7
 	case inOutToOut = 8
 	case constantPropKeyPath = 9
+	case constantPropStruct = 10
+	case closurePropPreviousArg = 11
+	case escapingClosureProp = 12
 	
 	case dead = 64
 	case ownedToGuaranteed = 128
