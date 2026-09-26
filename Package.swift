@@ -3,14 +3,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "SwiftDemangle",
+    name: "SwiftSymbolKit",
     platforms: [
         .macOS(.v15),
     ],
     products: [
         .library(name: "SwiftDemangle", targets: ["SwiftDemangle"]),
         .library(name: "SwiftSymbolIndex", targets: ["SwiftSymbolIndex"]),
-        .executable(name: "swift-symbol", targets: ["SwiftDemangleCLI"]),
+        .executable(name: "swift-symbol", targets: ["SwiftSymbolCLI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0"),
@@ -18,14 +18,14 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "SwiftDemangleCLI",
+            name: "SwiftSymbolCLI",
             dependencies: [
                 "SwiftSymbolIndex",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Yams", package: "Yams"),
             ]
         ),
-        .testTarget(name: "SwiftDemangleCLITests", dependencies: ["SwiftDemangleCLI"]),
+        .testTarget(name: "SwiftSymbolCLITests", dependencies: ["SwiftSymbolCLI"]),
         .target(
             name: "SwiftDemangle",
             path: "Sources/SwiftDemangle"

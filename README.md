@@ -1,4 +1,4 @@
-# SwiftDemangle
+# SwiftSymbolKit
 
 A translation (line-by-line in many cases) of Swift's [Demangler.cpp](https://github.com/apple/swift/blob/master/lib/Demangling/Demangler.cpp) into Swift.
 

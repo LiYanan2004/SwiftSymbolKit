@@ -1,9 +1,9 @@
 import Foundation
 import Testing
-@testable import SwiftDemangleCLI
+@testable import SwiftSymbolCLI
 
 @Suite
-struct SwiftDemangleCLITests {
+struct SwiftSymbolCLITests {
     @Test
     func exportedSwiftSymbols() throws {
         for fixture in TextBasedStubFixture.allCases {
@@ -25,7 +25,7 @@ struct SwiftDemangleCLITests {
     @Test
     func commandArguments() throws {
         let path = "/tmp/Example With Spaces.tbd"
-        let parsedCommand = try SwiftDemangleCommand.parseAsRoot([
+        let parsedCommand = try SwiftSymbolCommand.parseAsRoot([
             "interface", path, "--module-name", "Example", "--compiler-version", "Swift version 6.0",
             "--output", "/tmp/Example.swiftinterface",
         ])
