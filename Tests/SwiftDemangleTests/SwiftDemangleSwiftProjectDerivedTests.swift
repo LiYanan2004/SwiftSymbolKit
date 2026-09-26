@@ -17,7 +17,7 @@ import Testing
 struct SwiftDemangleSwiftProjectDerivedTests {
     @Test(arguments: ManglingFixtures.validExamples)
     func demangles(example: ManglingFixtures.Example) throws {
-        let parsed = try parseMangledSwiftSymbol(example.input)
+        let parsed = try SwiftSymbol(example.input)
         let result = parsed.print(using: SymbolPrintOptions.default.union(.synthesizeSugarOnTypes))
         #expect(result == example.output, "Failed to demangle \(example.input)")
     }
@@ -25,13 +25,13 @@ struct SwiftDemangleSwiftProjectDerivedTests {
     @Test(arguments: ManglingFixtures.invalidExamples)
     func rejectsInvalidMangling(example: ManglingFixtures.Example) {
         #expect(throws: (any Error).self) {
-            try parseMangledSwiftSymbol(example.input)
+            try SwiftSymbol(example.input)
         }
     }
 
     @Test func testActorProtocolConformanceDescriptor() throws {
         let mangled = "$s7SwiftUI16_ImpossibleActorCScAAAMc"
-        let symbol = try parseMangledSwiftSymbol(mangled)
+        let symbol = try SwiftSymbol(mangled)
         let result = symbol.print(using: SymbolPrintOptions.default.union(.synthesizeSugarOnTypes))
         #expect(result == "protocol conformance descriptor for SwiftUI._ImpossibleActor : Swift.Actor in SwiftUI")
     }

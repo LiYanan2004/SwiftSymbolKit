@@ -17,7 +17,7 @@ public struct SymbolStore {
     /// Merges one symbol. Algorithm implementation is intentionally pending.
     @discardableResult
     public mutating func merge(_ mangledSymbol: String) throws -> MergeResult {
-        // TODO: Parse through parseMangledSwiftSymbol, then use SymbolExtractor.
+        // TODO: Parse through SwiftSymbol(_:isType:), then use SymbolExtractor.
         // Normalize supported linker prefixes for deduplication while retaining input spelling.
         // Parse/extract before mutation so thrown errors leave the index unchanged.
         // Upsert ancestors and declarations by structural identity; promote context-only

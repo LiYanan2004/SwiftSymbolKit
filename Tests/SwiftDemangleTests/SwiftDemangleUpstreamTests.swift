@@ -35,7 +35,7 @@ struct SwiftDemangleUpstreamTests {
             let expected = components[1]
             // The upstream CLI only classifies text recognized as a symbol.
             let options = expected.hasPrefix("{") ? corpus.options.union(.classify) : corpus.options
-            #expect(demangleSwiftSymbol(input, using: options) == expected, "\(input)")
+            #expect(SwiftSymbol.demangle(input, using: options) == expected, "\(input)")
             count += 1
         }
         #expect(count == corpus.expectedCount)
@@ -68,49 +68,49 @@ struct SwiftDemangleUpstreamTests {
             ("$s4main3foo3BarfMe_", "extension macro @Bar expansion #1 of foo in main")
         ]
         for example in examples {
-            #expect(try parseMangledSwiftSymbol(example.input).print() == example.expected, "\(example.input)")
+            #expect(try SwiftSymbol(example.input).print() == example.expected, "\(example.input)")
         }
     }
 
     @Test func rejectsInvalidTypesAndNumbers() {
         for input in ["", "SS_", "SSIeAghrx_", "Bf_", "Bi_", "Bv_", "Bi2147483647_", "Bi18446744073709551615_"] {
-            #expect(throws: (any Error).self) { try parseMangledSwiftSymbol(input, isType: true) }
+            #expect(throws: (any Error).self) { try SwiftSymbol(input, isType: true) }
         }
-        #expect(demangleSwiftSymbol("$sTJSdSSSpSrSUSP") == "$sTJSdSSSpSrSUSP")
-        #expect(demangleSwiftSymbol("$sTfr/") == "$sTfr/")
+        #expect(SwiftSymbol.demangle("$sTJSdSSSpSrSUSP") == "$sTJSdSSSpSrSUSP")
+        #expect(SwiftSymbol.demangle("$sTfr/") == "$sTfr/")
     }
 
     @Test func typeNodesAndNullTermination() throws {
-        let borrow = try parseMangledSwiftSymbol("SiBW", isType: true)
+        let borrow = try SwiftSymbol("SiBW", isType: true)
         #expect(borrow.kind == .type)
         #expect(borrow.children.first?.kind == .builtinBorrow)
-        let fixedArray = try parseMangledSwiftSymbol("$2_SiBV", isType: true)
+        let fixedArray = try SwiftSymbol("$2_SiBV", isType: true)
         #expect(fixedArray.kind == .type)
         #expect(fixedArray.children.first?.kind == .builtinFixedArray)
-        let function = try parseMangledSwiftSymbol("yySiXyc", isType: true)
+        let function = try SwiftSymbol("yySiXyc", isType: true)
         #expect(function.children.first?.children.first?.kind == .yieldTypes)
-        let opaque = try parseMangledSwiftSymbol("QR0_", isType: true)
+        let opaque = try SwiftSymbol("QR0_", isType: true)
         #expect(opaque.children.first?.children.first?.kind == .opaqueReturnTypeIndex)
         #expect(opaque.children.first?.children.first?.index == 1)
-        #expect(try parseMangledSwiftSymbol("Si\0ignored", isType: true).print() == "Swift.Int")
+        #expect(try SwiftSymbol("Si\0ignored", isType: true).print() == "Swift.Int")
         #expect(getManglingPrefixLength("@__swiftmacro_".unicodeScalars) == 13)
     }
 
     @Test func symbolicReferences() throws {
         let input = "\u{FF}\u{1}\u{FE}\u{FF}\u{FF}\u{FF}"
         let resolved = SwiftSymbol(kind: .typeSymbolicReference, contents: .index(42))
-        let symbol = try parseMangledSwiftSymbol(input.unicodeScalars, isType: true) { value, offset in
+        let symbol = try SwiftSymbol(input.unicodeScalars, isType: true) { value, offset in
             #expect(value == -2)
             #expect(offset == 2)
             return resolved
         }
         #expect(symbol.kind == resolved.kind)
         #expect(symbol.index == 42)
-        let substitution = try parseMangledSwiftSymbol(("$s" + input + "AA").unicodeScalars) { _, _ in resolved }
+        let substitution = try SwiftSymbol(("$s" + input + "AA").unicodeScalars) { _, _ in resolved }
         #expect(substitution.children.count == 2)
         for invalid in ["\u{1}\0\0", "\u{3}\0\0\0\0", "\u{1}\u{100}\0\0\0"] {
             #expect(throws: (any Error).self) {
-                try parseMangledSwiftSymbol(invalid.unicodeScalars, isType: true) { _, _ in resolved }
+                try SwiftSymbol(invalid.unicodeScalars, isType: true) { _, _ in resolved }
             }
         }
     }

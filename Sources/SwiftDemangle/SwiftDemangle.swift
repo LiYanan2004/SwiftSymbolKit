@@ -10,48 +10,56 @@ import Foundation
 
 // MARK: Public interface
 
-/// This is likely to be the primary entry point to this file. Pass a string containing a Swift mangled symbol or type, get a parsed SwiftSymbol structure which can then be directly examined or printed.
-///
-/// - Parameters:
-///   - mangled: the string to be parsed ("isType` is false, the string should start with a Swift Symbol prefix, _T, _$S or $S).
-///   - isType: if true, no prefix is parsed and, on completion, the first item on the parse stack is returned.
-/// - Returns: the successfully parsed result
-/// - Throws: a SwiftSymbolParseError error that contains parse position when the error occurred.
-public func parseMangledSwiftSymbol(_ mangled: String, isType: Bool = false) throws -> SwiftSymbol {
-	return try parseMangledSwiftSymbol(mangled.unicodeScalars, isType: isType)
+extension SwiftSymbol {
+	/// Parses a mangled Swift symbol or type into a symbol tree.
+	///
+	/// - Parameters:
+	///   - mangledSymbol: The mangled symbol or type encoding.
+	///   - isType: Whether to parse a type encoding without a symbol prefix. Defaults to `false`.
+	/// - Throws: `SwiftSymbolParseError` when parsing fails.
+	public init(_ mangledSymbol: String, isType: Bool = false) throws {
+		try self.init(mangledSymbol.unicodeScalars, isType: isType)
+	}
+
+	/// Parses Unicode scalars containing a mangled Swift symbol or type.
+	///
+	/// - Parameters:
+	///   - mangledSymbol: The mangled symbol or type encoding.
+	///   - isType: Whether to parse a type encoding without a symbol prefix. Defaults to `false`.
+	///   - symbolicReferenceResolver: Resolves a signed relative reference and the scalar offset
+	///     of its four-byte payload. Binary payload bytes must be represented by scalars in
+	///     `0...255`; the preceding scalar identifies the reference kind.
+	/// - Throws: `SwiftSymbolParseError` when parsing fails, or an error from the resolver.
+	public init<Scalars: Collection>(
+		_ mangledSymbol: Scalars,
+		isType: Bool = false,
+		symbolicReferenceResolver: ((Int32, Int) throws -> SwiftSymbol)? = nil
+	) throws where Scalars.Element == UnicodeScalar {
+		var demangler = Demangler(scalars: mangledSymbol)
+		demangler.symbolicReferenceResolver = symbolicReferenceResolver
+		if isType {
+			self = try demangler.demangleType()
+			return
+		}
+		let mangledName = String(String.UnicodeScalarView(mangledSymbol))
+		let isModernSymbol = getManglingPrefixLength(mangledSymbol) != 0 || mangledName.hasPrefix("async_Main") || mangledName.hasPrefix("_async_Main")
+		self = try isModernSymbol ? demangler.demangleSymbol() : demangler.demangleSwift3TopLevelSymbol()
+		originalMangling = mangledName
+	}
 }
 
-/// Pass a collection of `UnicodeScalars` containing a Swift mangled symbol or type, get a parsed SwiftSymbol structure which can then be directly examined or printed.
-///
-/// - Parameters:
-///   - mangled: the collection of `UnicodeScalars` to be parsed ("isType` is false, the string should start with a Swift Symbol prefix, _T, _$S or $S).
-///   - isType: if true, no prefix is parsed and, on completion, the first item on the parse stack is returned.
-///   - symbolicReferenceResolver: Resolves a signed relative reference and the scalar offset of its four-byte payload.
-///     Binary payload bytes must be represented by scalars in `0...255`; the preceding scalar identifies the reference kind.
-/// - Returns: the successfully parsed result
-/// - Throws: a SwiftSymbolParseError error that contains parse position when the error occurred.
-public func parseMangledSwiftSymbol<C: Collection>(_ mangled: C, isType: Bool = false, symbolicReferenceResolver: ((Int32, Int) throws -> SwiftSymbol)? = nil) throws -> SwiftSymbol where C.Iterator.Element == UnicodeScalar {
-	var demangler = Demangler(scalars: mangled)
-	demangler.symbolicReferenceResolver = symbolicReferenceResolver
-	if isType {
-		return try demangler.demangleType()
+extension SwiftSymbol {
+	/// Demangles a symbol, returning the original name when parsing fails.
+	///
+    /// Classification, when requested, also applies to names that cannot be parsed.
+	public static func demangle(_ mangled: String, using options: SymbolPrintOptions = .default) -> String {
+		guard let symbol = try? SwiftSymbol(mangled) else {
+			let prefix = options.contains(.classify) ? SwiftSymbol.classificationPrefix(for: mangled, symbol: nil) : ""
+			return prefix + mangled
+		}
+		let printed = symbol.print(using: options)
+		return printed.isEmpty ? mangled : printed
 	}
-	let mangledName = String(String.UnicodeScalarView(mangled))
-	let isModernSymbol = getManglingPrefixLength(mangled) != 0 || mangledName.hasPrefix("async_Main") || mangledName.hasPrefix("_async_Main")
-	var symbol = try isModernSymbol ? demangler.demangleSymbol() : demangler.demangleSwift3TopLevelSymbol()
-	symbol.originalMangling = mangledName
-	return symbol
-}
-
-/// Demangles a symbol, returning the original name when parsing fails.
-/// Classification, when requested, also applies to names that cannot be parsed.
-public func demangleSwiftSymbol(_ mangled: String, using options: SymbolPrintOptions = .default) -> String {
-	guard let symbol = try? parseMangledSwiftSymbol(mangled) else {
-		let prefix = options.contains(.classify) ? SwiftSymbol.classificationPrefix(for: mangled, symbol: nil) : ""
-		return prefix + mangled
-	}
-	let printed = symbol.print(using: options)
-	return printed.isEmpty ? mangled : printed
 }
 
 extension SwiftSymbol: CustomStringConvertible {
@@ -107,7 +115,7 @@ private extension SwiftSymbol {
 		if getManglingPrefixLength(mangledName.unicodeScalars) != 0 {
 			let name = Self.strippingAsyncContinuation(from: Self.strippingSuffix(from: mangledName))
 			guard ["TA", "Ta", "To", "TO", "TR", "Tr", "TW", "fC"].contains(where: name.hasSuffix) else { return false }
-			let parsedSymbol = name == mangledName ? symbol : try? parseMangledSwiftSymbol(name)
+			let parsedSymbol = name == mangledName ? symbol : try? SwiftSymbol(name)
 			guard parsedSymbol?.kind == .global, let kind = parsedSymbol?.children.first?.kind else { return false }
 			switch kind {
 			case .objCAttribute, .nonObjCAttribute, .partialApplyObjCForwarder,

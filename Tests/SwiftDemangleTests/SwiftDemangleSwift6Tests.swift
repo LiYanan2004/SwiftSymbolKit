@@ -22,35 +22,35 @@ struct SwiftDemangleSwift6Tests {
 			("$s$2_$0_SSXSAXSA_s11InlineArrayVy$2_ABy$0_SSGGtD", "([3 of [1 of Swift.String]], Swift.InlineArray<3, Swift.InlineArray<1, Swift.String>>)")
 		]
 		for example in examples {
-			let result = try parseMangledSwiftSymbol(example.mangled).print(using: options)
+			let result = try SwiftSymbol(example.mangled).print(using: options)
 			#expect(result == example.demangled, "\(example.mangled)")
 		}
 	}
 
 	@Test func testEmbeddedSwiftPrefix() throws {
 		for mangled in ["$eBAD", "_$eBAD"] {
-			#expect(try parseMangledSwiftSymbol(mangled).print(using: options) == "Builtin.ImplicitActor")
+			#expect(try SwiftSymbol(mangled).print(using: options) == "Builtin.ImplicitActor")
 		}
 	}
 
 	@Test func testConstValueAnnotation() throws {
-		let symbol = try parseMangledSwiftSymbol("SiYg", isType: true)
+		let symbol = try SwiftSymbol("SiYg", isType: true)
 		#expect(symbol.print(using: options) == "@const Swift.Int")
 		#expect(symbol.children.first?.kind == .constValue)
-		let literal = try parseMangledSwiftSymbol("SiYt", isType: true)
+		let literal = try SwiftSymbol("SiYt", isType: true)
 		#expect(literal.print(using: options) == "_const Swift.Int")
 		#expect(literal.children.first?.kind == .compileTimeLiteral)
 	}
 
 	@Test func testSILParameterMarkers() throws {
-		let symbol = try parseMangledSwiftSymbol("BAIgHgIL_", isType: true)
+		let symbol = try SwiftSymbol("BAIgHgIL_", isType: true)
 		#expect(symbol.print(using: options) == "@callee_guaranteed @async (@guaranteed Builtin.ImplicitActor) -> ()")
 		#expect(contains(.implParameterIsolated, in: symbol))
 		#expect(contains(.implParameterImplicitLeading, in: symbol))
 	}
 
 	@Test func testDependentOpaqueConformance() throws {
-		let symbol = try parseMangledSwiftSymbol("$s3use1xAA3OfPVy3lib1GVyAA1fQryFQOyQo_GAjE1PAAxAeKHD1_AIHO_HCg_Gvp")
+		let symbol = try SwiftSymbol("$s3use1xAA3OfPVy3lib1GVyAA1fQryFQOyQo_GAjE1PAAxAeKHD1_AIHO_HCg_Gvp")
 		#expect(contains(.dependentProtocolConformanceOpaque, in: symbol))
 	}
 
@@ -60,7 +60,7 @@ struct SwiftDemangleSwift6Tests {
 			("$s18keypaths_inlinable13KeypathStructV8computedSSvpACTKMAq", "key path applied method for keypaths_inlinable.KeypathStruct.computed : Swift.String : keypaths_inlinable.KeypathStruct, serialized")
 		]
 		for (mangled, expected) in cases {
-			#expect(try parseMangledSwiftSymbol(mangled).print(using: options) == expected, "\(mangled)")
+			#expect(try SwiftSymbol(mangled).print(using: options) == expected, "\(mangled)")
 		}
 	}
 
@@ -70,7 +70,7 @@ struct SwiftDemangleSwift6Tests {
 			("_TTRGrXFo_iV18switch_abstraction1A_ix_XFo_dS0__ix_", "thunk for @callee_owned (@unowned A) -> (@out A)")
 		]
 		for example in cases {
-			#expect(try parseMangledSwiftSymbol(example.mangled).print(using: .simplified) == example.demangled, "\(example.mangled)")
+			#expect(try SwiftSymbol(example.mangled).print(using: .simplified) == example.demangled, "\(example.mangled)")
 		}
 	}
 }

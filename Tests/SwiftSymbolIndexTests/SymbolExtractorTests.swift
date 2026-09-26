@@ -58,7 +58,7 @@ struct SymbolExtractorTests {
 
     @Test func preservesSignatureNodesAndGenericScope() throws {
         let fixture = SymbolExtractionFixture.genericMethod
-        let tree = try parseMangledSwiftSymbol(fixture.input)
+        let tree = try SwiftSymbol(fixture.input)
         let extraction = try extractor.extract(tree, mangledSymbol: fixture.input)
         let method = try #require(extraction.declarations.last)
         let originalSignature = try #require(tree.children.first?.children.last)
@@ -148,7 +148,7 @@ struct SymbolExtractorTests {
     @Test func preservesDeclarationNamesAndDiscriminators() throws {
         var identifiers: Set<SymbolDeclaration.ID> = []
         for fixture in DeclarationNameFixture.allCases {
-            var function = try parseMangledSwiftSymbol(SymbolExtractionFixture.nestedMethod.input).children[0]
+            var function = try SwiftSymbol(SymbolExtractionFixture.nestedMethod.input).children[0]
             function.children[1] = fixture.input
             let extraction = try extractor.extract(function, mangledSymbol: "fixture")
             let declaration = try #require(extraction.declarations.last)
@@ -160,7 +160,7 @@ struct SymbolExtractorTests {
     }
 
     @Test func distinguishesStaticMembersModulesAndParameterLabels() throws {
-        let base = try parseMangledSwiftSymbol(SymbolExtractionFixture.labeledFunction.input).children[0]
+        let base = try SwiftSymbol(SymbolExtractionFixture.labeledFunction.input).children[0]
         var otherModule = base
         otherModule.children[0] = SwiftSymbol(kind: .module, contents: .name("Other"))
         var otherLabels = base
@@ -174,7 +174,7 @@ struct SymbolExtractorTests {
     }
 
     @Test func preservesFunctionLocalContext() throws {
-        let enclosingFunction = try parseMangledSwiftSymbol(SymbolExtractionFixture.genericMethod.input).children[0]
+        let enclosingFunction = try SwiftSymbol(SymbolExtractionFixture.genericMethod.input).children[0]
         let localType = SwiftSymbol(kind: .structure, children: [
             enclosingFunction, SwiftSymbol(kind: .identifier, contents: .name("Local"))
         ])

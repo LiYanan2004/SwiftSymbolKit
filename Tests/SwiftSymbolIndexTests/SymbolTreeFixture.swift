@@ -12,7 +12,7 @@ enum UnsupportedTreeFixture: CaseIterable {
 
     var input: SwiftSymbol {
         get throws {
-            let function = try parseMangledSwiftSymbol(SymbolExtractionFixture.nestedMethod.input).children[0]
+            let function = try SwiftSymbol(SymbolExtractionFixture.nestedMethod.input).children[0]
             switch self {
             case .unknownWrapper:
                 return SwiftSymbol(kind: .outlinedCopy, children: [function])
@@ -49,7 +49,7 @@ enum MalformedTreeFixture: CaseIterable {
 
     var input: SwiftSymbol {
         get throws {
-            var function = try parseMangledSwiftSymbol(SymbolExtractionFixture.nestedMethod.input).children[0]
+            var function = try SwiftSymbol(SymbolExtractionFixture.nestedMethod.input).children[0]
             switch self {
             case .emptyMetadata:
                 return SwiftSymbol(kind: .typeMetadataAccessFunction)

@@ -21,7 +21,7 @@ public struct SymbolExtractor {
     /// Parses one mangled symbol and extracts its declaration facts.
     /// Throws a demangler error for invalid input or `ExtractionError` for invalid node layouts.
     public func extract(_ mangledSymbol: String) throws -> Extraction {
-        try extract(parseMangledSwiftSymbol(mangledSymbol), mangledSymbol: mangledSymbol)
+        try extract(SwiftSymbol(mangledSymbol), mangledSymbol: mangledSymbol)
     }
 
     /// Supply the original spelling for provenance when passing a parsed tree.

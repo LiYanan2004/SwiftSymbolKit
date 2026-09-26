@@ -136,7 +136,7 @@ struct SymbolPrinter {
 			switch kind {
 			case .constantPropFunction, .constantPropGlobal:
 				let text = child.text ?? ""
-				target.write((try? parseMangledSwiftSymbol(text))?.description ?? text)
+				target.write((try? SwiftSymbol(text))?.description ?? text)
 			case .constantPropString:
 				if let text = child.text, text.hasPrefix("_") { target.write(String(text.dropFirst())) }
 				else { _ = printName(child) }
@@ -1173,7 +1173,7 @@ struct SymbolPrinter {
 		case .functionSignatureSpecializationParamKind: printFunctionSignatureSpecializationParamKind(name)
 		case .functionSignatureSpecializationParamPayload:
 			if let index = name.index { target.write("\(index)") }
-			else { target.write((try? parseMangledSwiftSymbol(name.text ?? "").description) ?? (name.text ?? "")) }
+			else { target.write((try? SwiftSymbol(name.text ?? "").description) ?? (name.text ?? "")) }
 		case .functionSignatureSpecializationReturn: printFunctionSignatureSpecializationParam(name)
 		case .genericPartialSpecialization: printSpecializationPrefix(name, description: "generic partial specialization", paramPrefix: "Signature = ")
 		case .genericPartialSpecializationNotReAbstracted: printSpecializationPrefix(name, description: "generic not re-abstracted partial specialization", paramPrefix: "Signature = ")
