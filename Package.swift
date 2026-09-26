@@ -1,4 +1,4 @@
-// swift-tools-version:6.0
+// swift-tools-version: 6.0
 
 import PackageDescription
 
@@ -11,23 +11,23 @@ let package = Package(
     targets: [
         .target(
             name: "SwiftDemangle",
-            path: "SwiftDemangle"
+            path: "Sources/SwiftDemangle"
         ),
         .target(
             name: "SwiftSymbolIndex",
             dependencies: ["SwiftDemangle"],
-            path: "SwiftSymbolIndex"
+            path: "Sources/SwiftSymbolIndex"
         ),
         .testTarget(
             name: "SwiftSymbolIndexTests",
             dependencies: ["SwiftSymbolIndex", "SwiftDemangle"],
-            path: "SwiftSymbolIndexTests",
+            path: "Tests/SwiftSymbolIndexTests",
             exclude: ["Fixtures"]
         ),
         .testTarget(
             name: "SwiftDemangleTests",
             dependencies: ["SwiftDemangle"],
-            path: "SwiftDemangleTests"
+            path: "Tests/SwiftDemangleTests"
         ),
     ],
     swiftLanguageModes: [.v5]
