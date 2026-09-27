@@ -5,7 +5,7 @@ import SwiftSyntaxBuilder
 import SwiftBasicFormat
 
 /// Renders every indexed declaration while retaining foreign extension contexts.
-struct InterfaceDeclarationRenderer {
+struct InterfaceDeclarationRenderer: Sendable {
     let index: SymbolIndexStore
     private var declaredTypeIDs: Set<SymbolDeclaration.ID> = []
     private(set) var diagnostics: [SymbolDiagnostic] = []
@@ -23,13 +23,13 @@ struct InterfaceDeclarationRenderer {
         requirementsByProtocolID = Dictionary(grouping: index.protocolRequirements, by: \.protocolID)
     }
 
-    private enum RenderTask {
+    private enum RenderTask: Sendable {
         case declaration(SymbolDeclaration)
         case typeExtension([SymbolDeclaration])
         case conformance(ProtocolConformance)
     }
 
-    mutating func render() throws -> [DeclSyntax] {
+    mutating func render() async throws -> [DeclSyntax] {
         collectDeclaredTypes()
         inferGenericCounts()
         for declaration in index.declarationsByID.values where declaration.kind == .enumCase {
@@ -68,13 +68,13 @@ struct InterfaceDeclarationRenderer {
         var snapshot = self
         snapshot.diagnostics = []
         let renderer = snapshot
-        let results = try tasks.map { task in
+        let results = try await ParallelMap.map(tasks) { task in
             var worker = renderer
             let declaration: DeclSyntax
             switch task {
             case .declaration(let input):
-                declaration = try worker.renderDeclaration(input, types: InterfaceTypeRenderer(), inProtocol: false)
-            case .typeExtension(let members): declaration = try worker.renderExtension(members)
+                declaration = try await worker.renderDeclaration(input, types: InterfaceTypeRenderer(), inProtocol: false)
+            case .typeExtension(let members): declaration = try await worker.renderExtension(members)
             case .conformance(let input): declaration = worker.renderConformance(input)
             }
             return (declaration, worker.diagnostics)
@@ -91,7 +91,7 @@ struct InterfaceDeclarationRenderer {
 }
 
 fileprivate extension InterfaceDeclarationRenderer {
-    mutating func renderExtension(_ members: [SymbolDeclaration]) throws -> DeclSyntax {
+    mutating func renderExtension(_ members: [SymbolDeclaration]) async throws -> DeclSyntax {
         guard let member = members.first, case .typeExtension(let context) = member.context else {
             preconditionFailure("Expected a nonempty extension group")
         }
@@ -99,7 +99,7 @@ fileprivate extension InterfaceDeclarationRenderer {
             let types = try contextTypes(for: context.extendedType)
             let requirements = try types.requirements(context.genericSignature)
             let name = try qualifiedName(context.extendedType)
-            let body = try renderDeclarations(members, types: types, inProtocol: false)
+            let body = try await renderDeclarations(members, types: types, inProtocol: false)
             return DeclSyntax(ExtensionDeclSyntax(extendedType: name,
                 genericWhereClause: InterfaceTypeRenderer.whereClause(requirements)) {
                 self.members(body)
@@ -176,13 +176,13 @@ fileprivate extension InterfaceDeclarationRenderer {
 
     mutating func renderDeclarations(
         _ declarations: [SymbolDeclaration], types: InterfaceTypeRenderer, inProtocol: Bool
-    ) throws -> [DeclSyntax] {
+    ) async throws -> [DeclSyntax] {
         var snapshot = self
         snapshot.diagnostics = []
         let renderer = snapshot
-        let results = try declarations.map { declaration in
+        let results = try await ParallelMap.map(declarations) { declaration in
             var worker = renderer
-            let syntax = try worker.renderDeclaration(declaration, types: types, inProtocol: inProtocol)
+            let syntax = try await worker.renderDeclaration(declaration, types: types, inProtocol: inProtocol)
             return (syntax, worker.diagnostics)
         }
         diagnostics += results.flatMap { $0.1 }
@@ -240,7 +240,7 @@ fileprivate extension InterfaceDeclarationRenderer {
         _ declaration: SymbolDeclaration,
         types inheritedTypes: InterfaceTypeRenderer,
         inProtocol: Bool
-    ) throws -> DeclSyntax {
+    ) async throws -> DeclSyntax {
         try Task.checkCancellation()
         do {
             if let nameNode = declaration.nameNode, [.privateDeclName, .localDeclName].contains(nameNode.kind) {
@@ -295,7 +295,7 @@ fileprivate extension InterfaceDeclarationRenderer {
                 }
                 let inheritance = inheritanceClause(inheritedProtocols)
                 let name = try InterfaceTypeRenderer.identifier(declaration.name)
-                let body = members(try renderDeclarations(index.members(of: declaration.id).filter {
+                let body = members(try await renderDeclarations(index.members(of: declaration.id).filter {
                     if case .declaration(let parent) = $0.context { return parent == declaration.id }
                     return false
                 }, types: types, inProtocol: isProtocol))

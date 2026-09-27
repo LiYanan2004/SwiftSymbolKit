@@ -3,7 +3,7 @@ import Foundation
 // MARK: DemangleNodes.def
 
 extension SwiftSymbol {
-	public enum Kind {
+	public enum Kind: Sendable {
 		case asyncMainEntryPoint
 		case borrowAccessor
 		case mutateAccessor

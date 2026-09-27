@@ -4,7 +4,7 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 
 /// Syntax for supported demangle nodes, with explicit generic scopes.
-struct InterfaceTypeRenderer {
+struct InterfaceTypeRenderer: Sendable {
     struct RenderingError: Error, CustomStringConvertible {
         let description: String
         init(_ description: String) { self.description = description }

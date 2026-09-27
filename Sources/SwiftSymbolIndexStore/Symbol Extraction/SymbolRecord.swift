@@ -1,8 +1,8 @@
 import SwiftDemangle
 
 /// Preserves a successfully parsed input even when declaration extraction is unsupported.
-public struct SymbolRecord {
-    public enum Role: Equatable {
+public struct SymbolRecord: Sendable {
+    public enum Role: Equatable, Sendable {
         // Declaration-related symbols.
         case declaration
         case metadata

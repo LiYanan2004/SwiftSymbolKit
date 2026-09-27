@@ -1,12 +1,12 @@
 /// An extraction, merge or interface-generation issue with traceable input symbols.
-public struct SymbolDiagnostic {
-    public enum Kind: Hashable {
+public struct SymbolDiagnostic: Sendable {
+    public enum Kind: Hashable, Sendable {
         case unsupportedSymbol
         case conflictingInformation
         case incompleteDeclaration
     }
 
-    public enum Severity {
+    public enum Severity: Sendable {
         case info
         case warning
         case error

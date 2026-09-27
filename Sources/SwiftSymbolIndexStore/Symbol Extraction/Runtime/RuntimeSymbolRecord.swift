@@ -1,7 +1,7 @@
 /// A runtime support symbol associated with a class declaration.
 /// These records describe exported runtime entry points or data, not source members.
-public struct RuntimeSymbolRecord {
-    public enum Kind {
+public struct RuntimeSymbolRecord: Sendable {
+    public enum Kind: Sendable {
         case classMetadataBaseOffset
         case methodLookupFunction
     }

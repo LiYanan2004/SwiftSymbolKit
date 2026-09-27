@@ -2,7 +2,7 @@ import SwiftDemangle
 
 /// Incrementally indexes declarations and relationships from mangled Swift symbols.
 /// The caller owns synchronization when sharing a store across concurrent work.
-public struct SymbolIndexStore {
+public struct SymbolIndexStore: Sendable {
     public private(set) var declarationsByID: [SymbolDeclaration.ID: SymbolDeclaration] = [:]
     /// Keyed by mangling with the optional linker underscore removed.
     public private(set) var symbolRecordsByMangledName: [String: SymbolRecord] = [:]
@@ -33,7 +33,7 @@ public struct SymbolIndexStore {
     private var diagnosticsByIdentity: [DiagnosticIdentity: SymbolDiagnostic] = [:]
     private var conflictingDeclarationIDs: Set<SymbolDeclaration.ID> = []
 
-    private struct DiagnosticIdentity: Hashable {
+    private struct DiagnosticIdentity: Hashable, Sendable {
         let kind: SymbolDiagnostic.Kind
         let message: String
         let declarationID: SymbolDeclaration.ID?
@@ -79,9 +79,9 @@ public struct SymbolIndexStore {
         public let underlyingError: any Error
     }
 
-    /// Extracts bounded batches and merges in input order.
+    /// Extracts bounded batches in parallel and merges in input order.
     /// Reports the first invalid input, preserving the same prefix as individual merges.
-    public mutating func merge(contentsOf mangledSymbols: [String]) throws {
+    public mutating func merge(contentsOf mangledSymbols: [String]) async throws {
         try Task.checkCancellation()
         // Bound temporary demangle trees independently of the total input size.
         let windowSize = 4096
@@ -91,7 +91,7 @@ public struct SymbolIndexStore {
                 seenSymbols.insert($0).inserted
                     && symbolRecordsByMangledName[Self.normalizedSymbol($0)]?.mangledSymbols.contains($0) != true
             }
-            let results = inputs.map { symbol in
+            let results = try await ParallelMap.map(inputs) { symbol in
                 Result { try Self.extract(symbol) }
             }
             for (symbol, result) in zip(inputs, results) {

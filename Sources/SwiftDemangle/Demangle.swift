@@ -3,7 +3,7 @@ import Foundation
 // MARK: Demangle.h
 
 /// These options mimic those used in the Swift project. Check that project for details.
-public struct SymbolPrintOptions: OptionSet {
+public struct SymbolPrintOptions: OptionSet, Sendable {
 	public let rawValue: Int
 	
 	public static let synthesizeSugarOnTypes = SymbolPrintOptions(rawValue: 1 << 0)
@@ -209,13 +209,13 @@ enum ValueWitnessKind: UInt64, CustomStringConvertible {
 	}
 }
 
-public struct SwiftSymbol {
+public struct SwiftSymbol: Sendable {
 	public let kind: Kind
 	public var children: [SwiftSymbol]
 	public let contents: Contents
 	var originalMangling: String?
 	
-	public enum Contents {
+	public enum Contents: Sendable {
 		case none
 		case index(UInt64)
 		case name(String)

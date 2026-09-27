@@ -3,7 +3,7 @@ import SwiftDemangle
 /// A protocol inheritance or associated-type conformance requirement observed in a symbol.
 ///
 /// Descriptor symbols do not provide a complete protocol requirement signature: layout and same-type requirements can be absent from the exported symbol names.
-public struct ProtocolConformanceRequirement {
+public struct ProtocolConformanceRequirement: Sendable {
     /// The protocol that declares this requirement.
     public let protocolID: SymbolDeclaration.ID
 

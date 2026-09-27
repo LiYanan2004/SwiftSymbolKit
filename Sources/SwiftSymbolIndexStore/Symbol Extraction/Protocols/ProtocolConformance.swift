@@ -1,7 +1,7 @@
 import SwiftDemangle
 
 /// A conformance relationship with its own declaring module and conditional requirements.
-public struct ProtocolConformance {
+public struct ProtocolConformance: Sendable {
     public let conformingType: SwiftSymbol
     public let protocolType: SwiftSymbol
     public let moduleName: String

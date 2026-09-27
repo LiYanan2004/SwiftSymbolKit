@@ -73,7 +73,7 @@ public struct SwiftInterfaceWriter {
         self.configuration = configuration
     }
 
-    public func write(_ index: SymbolIndexStore) throws -> Output {
+    public func write(_ index: SymbolIndexStore) async throws -> Output {
         try Task.checkCancellation()
         let header = try Trivia(pieces: headerLines().flatMap { [.lineComment($0), .newlines(1)] })
         let imports = try Set(configuration.imports).subtracting([configuration.moduleName]).sorted().map { module in
@@ -86,7 +86,7 @@ public struct SwiftInterfaceWriter {
             })
         }
         var renderer = InterfaceDeclarationRenderer(index: index)
-        let declarations = try renderer.render()
+        let declarations = try await renderer.render()
         let sourceFile = SourceFileSyntax(leadingTrivia: header,
             endOfFileToken: .endOfFileToken(leadingTrivia: imports.isEmpty && declarations.isEmpty ? [] : .newline)) {
             for importDeclaration in imports {
@@ -101,7 +101,7 @@ public struct SwiftInterfaceWriter {
         if sourceFile.statements.count < 2 {
             text = sourceFile.formatted(using: BasicFormat(indentationWidth: .spaces(4))).description
         } else {
-            let blocks = Array(sourceFile.statements).map {
+            let blocks = try await ParallelMap.map(Array(sourceFile.statements)) {
                 // Detach to keep formatting from walking sibling declarations through the parent.
                 $0.detached.formatted(using: BasicFormat(indentationWidth: .spaces(4))).description
             }

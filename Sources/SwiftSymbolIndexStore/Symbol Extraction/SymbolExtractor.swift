@@ -2,8 +2,8 @@ import SwiftDemangle
 
 /// Extracts declaration facts by following known demangle node layouts.
 /// Unrecognized symbols retain their original tree and produce an unsupported diagnostic.
-public struct SymbolExtractor {
-    public struct ExtractionResult {
+public struct SymbolExtractor: Sendable {
+    public struct ExtractionResult: Sendable {
         public let record: SymbolRecord
         /// Ancestors precede their members. Referenced signature types are not declarations.
         public let declarations: [SymbolDeclaration]

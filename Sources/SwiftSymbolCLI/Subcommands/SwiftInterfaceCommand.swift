@@ -3,7 +3,7 @@ import Foundation
 import OSLog
 import SwiftSymbolIndexStore
 
-struct SwiftInterfaceCommand: ParsableCommand {
+struct SwiftInterfaceCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "interface",
         abstract: "Reconstruct a Swift interface from a TBD file.",
@@ -47,7 +47,7 @@ struct SwiftInterfaceCommand: ParsableCommand {
     )
     var otherCompilerFlags: [String] = []
 
-    mutating func run() throws {
+    mutating func run() async throws {
         let stub = try TextBasedStub(yaml: String(contentsOf: input, encoding: .utf8))
         let symbols = stub.swiftSymbols
         guard !symbols.isEmpty else {
@@ -56,7 +56,7 @@ struct SwiftInterfaceCommand: ParsableCommand {
 
         var store = SymbolIndexStore()
         do {
-            try store.merge(contentsOf: symbols)
+            try await store.merge(contentsOf: symbols)
         } catch let error as SymbolIndexStore.MergeError {
             Loggers.symbolExtraction.error("Failed to parse symbol: \(String(describing: error.underlyingError), privacy: .public). Symbol: \(error.mangledSymbol, privacy: .public)")
             throw error.underlyingError
@@ -80,7 +80,7 @@ struct SwiftInterfaceCommand: ParsableCommand {
                           compilerFlags: compilerFlags),
             imports: imports
         ))
-        let interface = try writer.write(store)
+        let interface = try await writer.write(store)
         writeDiagnostics(interface.diagnostics)
         if let output {
             try interface.text.write(

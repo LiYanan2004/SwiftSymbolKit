@@ -1,15 +1,15 @@
 import SwiftDemangle
 
 /// A declaration assembled from one or more exported symbols.
-public struct SymbolDeclaration {
+public struct SymbolDeclaration: Sendable {
     /// Structural identity, independent of merge order and printed spelling.
-    public struct ID: Hashable {
+    public struct ID: Hashable, Sendable {
         // Length-prefixed node encoding includes context, discriminators and signature.
         // This key is an implementation detail, not a persistent serialization format.
         internal let structuralKey: String
     }
 
-    public enum Kind {
+    public enum Kind: Sendable {
         // Nominal types.
         case structure
         case enumeration
@@ -32,14 +32,14 @@ public struct SymbolDeclaration {
         case associatedType
     }
 
-    public enum Evidence {
+    public enum Evidence: Sendable {
         /// The declaration is known only through another declaration's context.
         case contextOnly
         /// At least one symbol directly describes the declaration.
         case direct
     }
 
-    public enum AccessorKind: Hashable {
+    public enum AccessorKind: Hashable, Sendable {
         // Value access.
         case getter
         case setter
