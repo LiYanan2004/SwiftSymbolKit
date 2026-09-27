@@ -28,12 +28,21 @@ struct SwiftSymbolCLITests {
         let parsedCommand = try SwiftSymbolCommand.parseAsRoot([
             "interface", path, "--module-name", "Example", "--compiler-version", "Swift version 6.0",
             "--output", "/tmp/Example.swiftinterface",
+            "--target", "arm64-apple-macosx15.0", "--swift-version", "6", "--enable-library-evolution",
+            "--import", "Swift", "--import", "Foundation", "--compiler-flag", "-D", "--compiler-flag", "TEST",
+            "--interface-format-version", "1.0",
         ])
         let command = try #require(parsedCommand as? SwiftInterfaceCommand)
         #expect(command.input == URL(fileURLWithPath: path))
         #expect(command.moduleName == "Example")
         #expect(command.compilerVersion == "Swift version 6.0")
         #expect(command.output == "/tmp/Example.swiftinterface")
+        #expect(command.target == "arm64-apple-macosx15.0")
+        #expect(command.swiftVersion == "6")
+        #expect(command.enableLibraryEvolution)
+        #expect(command.imports == ["Swift", "Foundation"])
+        #expect(command.otherCompilerFlags == ["-D", "TEST"])
+        #expect(command.interfaceFormatVersion == "1.0")
         let fileCommand = try SwiftInterfaceCommand.parse([URL(fileURLWithPath: path).absoluteString])
         #expect(fileCommand.input == command.input)
         let remoteCommand = try SwiftInterfaceCommand.parse(["https://example.com/Example.tbd"])
@@ -48,5 +57,25 @@ struct SwiftSymbolCLITests {
         #expect(!stub.swiftSymbols.isEmpty)
         #expect(stub.swiftSymbols.count == Set(stub.swiftSymbols).count)
         print("Decoded \(stub.installName): \(stub.swiftSymbols.count) unique Swift symbols")
+    }
+
+    @Test
+    func writesInterfaceFromTBD() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let input = directory.appendingPathComponent("Example.tbd")
+        let output = directory.appendingPathComponent("Example.swiftinterface")
+        try TextBasedStubFixture.multipleArchitectures.input.write(to: input, atomically: true, encoding: .utf8)
+        var command = try SwiftInterfaceCommand.parse([
+            input.path, "--output", output.path, "--import", "Swift",
+            "--target", "arm64-apple-macosx15.0", "--compiler-flag", "-D", "--compiler-flag", "TEST",
+        ])
+        try await command.run()
+        let text = try String(contentsOf: output, encoding: .utf8)
+        #expect(text.contains("// swift-module-flags: -target arm64-apple-macosx15.0 -D TEST -module-name Example"))
+        #expect(text.contains("import Swift"))
+        for name in ["Foo", "Bar", "Baz", "Qux"] { #expect(text.contains("public struct \(name) {")) }
+        #expect(!text.contains("Missing"))
     }
 }

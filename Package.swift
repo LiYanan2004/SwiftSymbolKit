@@ -20,6 +20,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0"),
         .package(url: "https://github.com/jpsim/Yams.git", from: "6.0.0"),
+        .package(url: "https://github.com/swift-precompiled/swift-syntax.git", from: "603.0.2"),
     ],
     targets: [
         .executableTarget(
@@ -37,14 +38,25 @@ let package = Package(
         ),
         .target(
             name: "SwiftSymbolIndexStore",
-            dependencies: ["SwiftDemangle"],
+            dependencies: [
+                "SwiftDemangle",
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftParser", package: "swift-syntax"),
+                .product(name: "SwiftBasicFormat", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+            ],
             path: "Sources/SwiftSymbolIndexStore"
         ),
         .testTarget(
             name: "SwiftSymbolIndexTests",
-            dependencies: ["SwiftSymbolIndexStore", "SwiftDemangle"],
+            dependencies: [
+                "SwiftSymbolIndexStore", "SwiftDemangle",
+                .product(name: "SwiftParser", package: "swift-syntax"),
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+            ],
             path: "Tests/SwiftSymbolIndexTests",
-            exclude: ["Fixtures"]
+            exclude: ["Fixtures"],
+            resources: [.copy("TestData")]
         ),
         .testTarget(
             name: "SwiftDemangleTests",

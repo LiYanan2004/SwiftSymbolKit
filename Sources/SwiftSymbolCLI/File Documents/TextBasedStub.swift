@@ -1,5 +1,7 @@
 import Yams
 
+typealias TBD = TextBasedStub
+
 /// The exported symbol sections of a YAML text-based dynamic library stub.
 struct TextBasedStub: Decodable {
     let installName: String
