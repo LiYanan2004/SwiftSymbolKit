@@ -1024,10 +1024,10 @@ struct NodePrinter {
 	
 	mutating func printDependentGenericInverseConformanceRequirement(_ name: SwiftSymbol) {
 		printFirstChild(name, suffix: ": ~")
-		switch name.children.at(1)?.index {
-		case 0: target.write("Swift.Copyable")
-		case 1: target.write("Swift.Escapable")
-		default: target.write("Swift.<bit \(name.children.at(1)?.index ?? 0)>")
+		if let protocolName = name.inverseConformanceProtocolName {
+			target.write(protocolName)
+		} else {
+			target.write("Swift.<bit \(name.children.at(1)?.index ?? 0)>")
 		}
 	}
 	

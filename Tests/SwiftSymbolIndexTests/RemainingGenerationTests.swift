@@ -6,6 +6,61 @@ import Testing
 @testable import SwiftSymbolIndexStore
 
 struct RemainingGenerationTests {
+    @Test func retainsInverseConformanceRequirementsInIndex() async throws {
+        let fixtures = [
+            (symbol: "_$s7Testing14__requiringTryyxxnKRi_zlF", index: 0, protocolName: "Copyable"),
+            (symbol: "_$s20InverseIndexFixtures9escapableyyxRi0_zlF", index: 1, protocolName: "Escapable")
+        ]
+        for fixture in fixtures {
+            var store = SymbolIndexStore()
+            try store.merge(fixture.symbol)
+            let record = try #require(store.symbolRecordsByMangledName[String(fixture.symbol.dropFirst())])
+            #expect(record.role != .unsupported)
+            #expect(store.diagnostics.isEmpty)
+            let declaration = try #require(store.declarationsByID.values.first { $0.mangledSymbols.contains(fixture.symbol) })
+            #expect(declaration.evidence == .direct)
+            let signature = try #require(declaration.genericSignature)
+            let requirement = try #require(signature.children.first { $0.kind == .dependentGenericInverseConformanceRequirement })
+            #expect(requirement.children.count == 2)
+            #expect(try requirement.children[1].smallIndex() == fixture.index)
+            #expect(requirement.description.contains("~Swift.\(fixture.protocolName)"))
+            #expect(declaration.signature?.declarationGenericSignature?.declarationKey == signature.declarationKey)
+            let output = try await SwiftInterfaceWriter(configuration: .init(moduleName: "Testing", compilerVersion: "test")).write(store)
+            #expect(!output.diagnostics.contains { $0.severity == .error }, "\(output.diagnostics)")
+            #expect(!Parser.parse(source: output.text).hasError)
+            #expect(output.text.contains("where A: ~Swift.\(fixture.protocolName)"), "\(output.text)")
+        }
+
+        let unknownRequirement = SwiftSymbol(kind: .dependentGenericInverseConformanceRequirement, children: [
+            SwiftSymbol(kind: .type, children: [SwiftSymbol(kind: .dependentGenericParamType, children: [
+                SwiftSymbol(kind: .index, contents: .index(0)), SwiftSymbol(kind: .index, contents: .index(0))
+            ])]),
+            SwiftSymbol(kind: .number, contents: .index(2))
+        ])
+        #expect(unknownRequirement.inverseConformanceProtocolName == nil)
+        #expect(unknownRequirement.description.contains("Swift.<bit 2>"))
+        let unknownSignature = SwiftSymbol(kind: .dependentGenericSignature, children: [unknownRequirement])
+        #expect(throws: InterfaceTypeRenderer.RenderingError.self) {
+            try InterfaceTypeRenderer(genericParametersByDepth: [0: ["A"]]).requirements(unknownSignature)
+        }
+
+        let existentialSymbol = "_$s7Testing4TestV10__function5named2in02xcB18CompatibleSelector11displayName6traits14sourceLocation10parameters12testFunctionACSS_ypRi_s_XPXpSg10ObjectiveC0H0VSgSSSgSayAA0B5Trait_pGAA06SourceM0VSaySS05firstJ0_AR06secondJ0ypXp4typetGyyYaYbKctFZ"
+        var store = SymbolIndexStore()
+        try store.merge(existentialSymbol)
+        let record = try #require(store.symbolRecordsByMangledName[String(existentialSymbol.dropFirst())])
+        #expect(record.role != .unsupported)
+        let declaration = try #require(store.declarationsByID.values.first { $0.name == "__function" })
+        #expect(declaration.evidence == .direct)
+        let signature = try #require(declaration.signature)
+        let inverseRequirements = inverseConformanceRequirements(in: signature)
+        #expect(inverseRequirements.count == 1)
+        #expect(try inverseRequirements[0].children[1].smallIndex() == 0)
+        let output = try await SwiftInterfaceWriter(configuration: .init(moduleName: "Testing", compilerVersion: "test")).write(store)
+        #expect(!output.diagnostics.contains { $0.severity == .error }, "\(output.diagnostics)")
+        #expect(!Parser.parse(source: output.text).hasError)
+        #expect(output.text.contains("any ~Swift.Copyable.Type"), "\(output.text)")
+    }
+
     @Test func rendersRecoveredTypesAndConformances() async throws {
         for fixture in RemainingGenerationFixture.allCases {
             var store = SymbolIndexStore()
@@ -98,5 +153,10 @@ struct RemainingGenerationTests {
     private func containsGenericParameter(in node: SwiftSymbol, depth: Int, index: Int) -> Bool {
         if let position = try? node.parameterPosition(), position == (depth, index) { return true }
         return node.children.contains { containsGenericParameter(in: $0, depth: depth, index: index) }
+    }
+
+    private func inverseConformanceRequirements(in node: SwiftSymbol) -> [SwiftSymbol] {
+        (node.kind == .dependentGenericInverseConformanceRequirement ? [node] : [])
+            + node.children.flatMap(inverseConformanceRequirements)
     }
 }

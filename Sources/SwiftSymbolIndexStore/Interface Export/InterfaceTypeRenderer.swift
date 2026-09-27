@@ -166,6 +166,25 @@ struct InterfaceTypeRenderer: Sendable {
     }
 
     private func constrainedExistentialProtocol(_ node: SwiftSymbol) throws -> TypeSyntax {
+        guard node.children.count == 2, node.children[1].kind == .constrainedExistentialRequirementList else {
+            throw RenderingError("Invalid constrained existential")
+        }
+        let requirements = node.children[1].children
+        if !requirements.isEmpty && requirements.allSatisfy({ $0.kind == .dependentGenericInverseConformanceRequirement }) {
+            let base = node.children[0].interfaceUnderlyingType
+            guard base.kind == .protocolList, base.children.count == 1, base.children[0].kind == .typeList else {
+                throw RenderingError("Invalid inverse-constrained existential")
+            }
+            let protocols = try base.children[0].children.map(type)
+            let suppressedProtocols = try requirements.map { requirement -> TypeSyntax in
+                guard requirement.children.first?.interfaceUnderlyingType.kind == .constrainedExistentialSelf else {
+                    throw RenderingError("Invalid inverse-constrained existential subject")
+                }
+                let protocolName = try inverseConformanceProtocolName(requirement)
+                return TypeSyntax(stringLiteral: "~\(protocolName)")
+            }
+            return composition(protocols + suppressedProtocols)
+        }
         let existential = try InterfaceConstrainedExistential(node)
         guard var protocolType = try type(existential.protocolType).as(MemberTypeSyntax.self) else {
             throw RenderingError("Invalid constrained existential protocol type")
@@ -176,6 +195,14 @@ struct InterfaceTypeRenderer: Sendable {
             }
         }
         return TypeSyntax(protocolType)
+    }
+
+    private func inverseConformanceProtocolName(_ requirement: SwiftSymbol) throws -> String {
+        guard requirement.children.count == 2 else { throw RenderingError("Invalid inverse conformance requirement") }
+        guard let protocolName = requirement.inverseConformanceProtocolName else {
+            throw RenderingError("Unsupported inverse conformance requirement")
+        }
+        return protocolName
     }
 
     struct FunctionSignature {
@@ -290,6 +317,10 @@ struct InterfaceTypeRenderer: Sendable {
                 }
                 return try GenericRequirementSyntax(requirement: .conformanceRequirement(ConformanceRequirementSyntax(
                     leftType: type(requirement.children[0]), rightType: IdentifierTypeSyntax(name: .identifier("AnyObject")))))
+            case .dependentGenericInverseConformanceRequirement:
+                let protocolName = try inverseConformanceProtocolName(requirement)
+                return try GenericRequirementSyntax(requirement: .conformanceRequirement(ConformanceRequirementSyntax(
+                    leftType: type(requirement.children[0]), rightType: TypeSyntax(stringLiteral: "~\(protocolName)"))))
             default: throw RenderingError("Unsupported generic requirement: \(requirement.kind)")
             }
         }

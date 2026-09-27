@@ -12,6 +12,14 @@ extension SwiftSymbol.Kind {
 }
 
 extension SwiftSymbol {
+	/// The protocol named by an inverse conformance requirement, when its ABI kind is known.
+	public var inverseConformanceProtocolName: String? {
+		guard kind == .dependentGenericInverseConformanceRequirement,
+			children.count == 2, let index = children[1].index,
+			let protocolKind = InvertibleProtocolKind(rawValue: index) else { return nil }
+		return "Swift.\(protocolKind.sourceName)"
+	}
+
 	var isSimpleType: Bool {
 		switch kind {
 		case .associatedType: fallthrough
