@@ -556,7 +556,7 @@ struct NodePrinter {
 					target.write("let ")
 				}
 				
-				target.write(Demangle.genericParameterName(depth: UInt64(gpDepth), index: UInt64(index)))
+				target.write(genericParameterName(depth: UInt64(gpDepth), index: UInt64(index)))
 				
 				if let value {
 					target.write(": ")
@@ -1138,7 +1138,7 @@ struct NodePrinter {
 		case .dependentGenericParamPackMarker: break
 		case .dependentGenericParamType:
 			if let depth = name.children.at(0)?.index, let index = name.children.at(1)?.index {
-				target.write(Demangle.genericParameterName(depth: depth, index: index))
+				target.write(genericParameterName(depth: depth, index: index))
 			}
 		case .dependentGenericParamValueMarker: break
 		case .dependentGenericSameShapeRequirement: printDependentGenericSameShapeRequirement(name)
@@ -1938,4 +1938,17 @@ extension FunctionSigSpecializationParamKind {
 		case .sroa: return "Exploded"
 		}
 	}
+}
+
+func genericParameterName(depth: UInt64, index: UInt64) -> String {
+    var name = ""
+    var index = index
+    repeat {
+        name.unicodeScalars.append(UnicodeScalar(UnicodeScalar("A").value + UInt32(index % 26))!)
+        index /= 26
+    } while index != 0
+    if depth != 0 {
+        name += String(depth)
+    }
+    return name
 }

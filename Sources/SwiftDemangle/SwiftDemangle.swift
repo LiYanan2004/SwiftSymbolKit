@@ -42,7 +42,7 @@ extension SwiftSymbol {
 			return
 		}
 		let mangledName = String(String.UnicodeScalarView(mangledSymbol))
-		let isModernSymbol = Demangle.getManglingPrefixLength(mangledSymbol) != 0 || mangledName.hasPrefix("async_Main") || mangledName.hasPrefix("_async_Main")
+		let isModernSymbol = getManglingPrefixLength(mangledSymbol) != 0 || mangledName.hasPrefix("async_Main") || mangledName.hasPrefix("_async_Main")
 		self = try isModernSymbol ? demangler.demangleSymbol() : demangler.demangleSwift3TopLevelSymbol()
 		originalMangling = mangledName
 	}
@@ -87,7 +87,7 @@ extension SwiftSymbol: CustomStringConvertible {
 private extension SwiftSymbol {
 	static func classificationPrefix(for mangledName: String, symbol: SwiftSymbol?) -> String {
 		var classifications: [String] = []
-		if !mangledName.hasPrefix("async_Main") && !mangledName.hasPrefix("_async_Main") && !mangledName.hasPrefix("_T") && Demangle.getManglingPrefixLength(mangledName.unicodeScalars) == 0 {
+		if !mangledName.hasPrefix("async_Main") && !mangledName.hasPrefix("_async_Main") && !mangledName.hasPrefix("_T") && getManglingPrefixLength(mangledName.unicodeScalars) == 0 {
 			classifications.append("N")
 		}
 		if isThunkSymbol(mangledName, symbol: symbol) {
@@ -112,7 +112,7 @@ private extension SwiftSymbol {
 	}
 
 	static func isThunkSymbol(_ mangledName: String, symbol: SwiftSymbol?) -> Bool {
-		if Demangle.getManglingPrefixLength(mangledName.unicodeScalars) != 0 {
+		if getManglingPrefixLength(mangledName.unicodeScalars) != 0 {
 			let name = Self.stripAsyncContinuation(Self.stripSuffix(mangledName))
 			guard ["TA", "Ta", "To", "TO", "TR", "Tr", "TW", "fC"].contains(where: name.hasSuffix) else { return false }
 			let parsedSymbol = name == mangledName ? symbol : try? SwiftSymbol(name)
@@ -132,7 +132,7 @@ private extension SwiftSymbol {
 	}
 
 	static func getThunkTarget(_ mangledName: String) -> String {
-		if Demangle.getManglingPrefixLength(mangledName.unicodeScalars) != 0 {
+		if getManglingPrefixLength(mangledName.unicodeScalars) != 0 {
 			guard Self.stripSuffix(mangledName) == mangledName else { return "" }
 			let name = Self.stripAsyncContinuation(mangledName)
 			if ["TR", "Tr", "TW"].contains(where: name.hasSuffix) { return "" }

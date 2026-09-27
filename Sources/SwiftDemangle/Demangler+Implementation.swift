@@ -3553,3 +3553,16 @@ extension Demangler {
 		return SwiftSymbol(kind: k, children: [], contents: .name(identifier))
 	}
 }
+
+func getManglingPrefixLength<C: Collection>(_ scalars: C) -> Int where C.Iterator.Element == UnicodeScalar {
+    var scanner = ScalarScanner(scalars: scalars)
+    if scanner.conditional(string: "_T0") || scanner.conditional(string: "_$S") || scanner.conditional(string: "_$s") || scanner.conditional(string: "_$e") {
+        return 3
+    } else if scanner.conditional(string: "$S") || scanner.conditional(string: "$s") || scanner.conditional(string: "$e") {
+        return 2
+    } else if scanner.conditional(string: "@__swiftmacro_") {
+        return 13
+    }
+
+    return 0
+}

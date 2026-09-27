@@ -54,8 +54,8 @@ struct UpstreamParityTests {
     }
 
     @Test func printsGenericParametersFromTheirIndices() throws {
-        #expect(Demangle.genericParameterName(depth: 0, index: 26) == "AB")
-        #expect(Demangle.genericParameterName(depth: 3, index: 27) == "BB3")
+        #expect(genericParameterName(depth: 0, index: 26) == "AB")
+        #expect(genericParameterName(depth: 3, index: 27) == "BB3")
         let parameter = try SwiftSymbol("qd1_26_", isType: true).children[0]
         #expect(parameter.text == nil)
         #expect(parameter.children.map(\.index) == [3, 27])

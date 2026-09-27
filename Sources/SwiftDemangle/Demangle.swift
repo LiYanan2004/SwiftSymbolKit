@@ -2,6 +2,9 @@ import Foundation
 
 // MARK: Demangle.h
 
+/// Namespace corresponding to swift::Demangle.
+enum Demangle {}
+
 /// These options mimic those used in the Swift project. Check that project for details.
 public struct SymbolPrintOptions: OptionSet, Sendable {
 	public let rawValue: Int

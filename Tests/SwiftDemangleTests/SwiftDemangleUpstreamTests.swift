@@ -93,7 +93,7 @@ struct SwiftDemangleUpstreamTests {
         #expect(opaque.children.first?.children.first?.kind == .opaqueReturnTypeIndex)
         #expect(opaque.children.first?.children.first?.index == 1)
         #expect(try SwiftSymbol("Si\0ignored", isType: true).print() == "Swift.Int")
-        #expect(Demangle.getManglingPrefixLength("@__swiftmacro_".unicodeScalars) == 13)
+        #expect(getManglingPrefixLength("@__swiftmacro_".unicodeScalars) == 13)
     }
 
     @Test func symbolicReferences() throws {
