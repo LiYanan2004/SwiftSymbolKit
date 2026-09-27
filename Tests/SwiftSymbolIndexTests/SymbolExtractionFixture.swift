@@ -1,5 +1,5 @@
 import SwiftDemangle
-import SwiftSymbolIndex
+import SwiftSymbolIndexStore
 
 /// Manglings emitted from Fixtures/Example.swift by Apple Swift 6.2.4.
 /// Reproduce with swiftc -emit-library -module-name Example -enable-library-evolution,

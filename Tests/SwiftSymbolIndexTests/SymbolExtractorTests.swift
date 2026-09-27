@@ -1,5 +1,5 @@
 import SwiftDemangle
-import SwiftSymbolIndex
+import SwiftSymbolIndexStore
 import Testing
 
 @Suite("Symbol tree extraction")

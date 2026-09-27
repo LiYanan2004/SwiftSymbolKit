@@ -1,6 +1,6 @@
 import ArgumentParser
 import Foundation
-import SwiftSymbolIndex
+import SwiftSymbolIndexStore
 
 struct SwiftInterfaceCommand: ParsableCommand {
     static let configuration = CommandConfiguration(

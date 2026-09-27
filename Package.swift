@@ -8,8 +8,13 @@ let package = Package(
         .macOS(.v15),
     ],
     products: [
-        .library(name: "SwiftDemangle", targets: ["SwiftDemangle"]),
-        .library(name: "SwiftSymbolIndex", targets: ["SwiftSymbolIndex"]),
+        .library(
+            name: "SwiftSymbolKit",
+            targets: [
+                "SwiftDemangle",
+                "SwiftSymbolIndexStore"
+            ]
+        ),
         .executable(name: "swift-symbol", targets: ["SwiftSymbolCLI"]),
     ],
     dependencies: [
@@ -20,7 +25,7 @@ let package = Package(
         .executableTarget(
             name: "SwiftSymbolCLI",
             dependencies: [
-                "SwiftSymbolIndex",
+                "SwiftSymbolIndexStore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Yams", package: "Yams"),
             ]
@@ -31,13 +36,13 @@ let package = Package(
             path: "Sources/SwiftDemangle"
         ),
         .target(
-            name: "SwiftSymbolIndex",
+            name: "SwiftSymbolIndexStore",
             dependencies: ["SwiftDemangle"],
-            path: "Sources/SwiftSymbolIndex"
+            path: "Sources/SwiftSymbolIndexStore"
         ),
         .testTarget(
             name: "SwiftSymbolIndexTests",
-            dependencies: ["SwiftSymbolIndex", "SwiftDemangle"],
+            dependencies: ["SwiftSymbolIndexStore", "SwiftDemangle"],
             path: "Tests/SwiftSymbolIndexTests",
             exclude: ["Fixtures"]
         ),
