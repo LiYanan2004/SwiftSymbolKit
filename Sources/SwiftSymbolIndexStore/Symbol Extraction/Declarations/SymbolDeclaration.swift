@@ -15,6 +15,8 @@ public struct SymbolDeclaration {
         case enumeration
         case `class`
         case `protocol`
+        /// A named alias; exported symbols may not encode its underlying type.
+        case typeAlias
 
         // Callable declarations.
         case function
@@ -37,10 +39,14 @@ public struct SymbolDeclaration {
         case direct
     }
 
-    public enum Accessor: Hashable {
+    public enum AccessorKind: Hashable {
         // Value access.
         case getter
         case setter
+
+        // Direct storage address access.
+        case unsafeAddressor
+        case unsafeMutableAddressor
 
         // Coroutine access.
         case read
@@ -73,6 +79,6 @@ public struct SymbolDeclaration {
     /// Requirements belonging to this declaration's generic scope.
     public internal(set) var genericSignature: SwiftSymbol?
     /// Observed accessors; absence alone does not establish source-level mutability.
-    public internal(set) var accessors: Set<Accessor>
+    public internal(set) var accessors: Set<AccessorKind>
     public internal(set) var mangledSymbols: Set<String>
 }

@@ -1,12 +1,13 @@
 import SwiftDemangle
 
-internal extension SwiftSymbol {
+extension SwiftSymbol {
     var declarationKind: SymbolDeclaration.Kind? {
         switch kind {
         case .structure: return .structure
         case .enum: return .enumeration
         case .class: return .class
         case .protocol: return .protocol
+        case .typeAlias: return .typeAlias
         case .function: return .function
         case .allocator: return .initializer
         case .constructor: return .initializer
@@ -18,21 +19,24 @@ internal extension SwiftSymbol {
         }
     }
 
-    var isNominalDeclaration: Bool {
+    var isTypeDeclaration: Bool {
         switch kind {
         case .structure: return true
         case .enum: return true
         case .class: return true
         case .protocol: return true
+        case .typeAlias: return true
         default: return false
         }
     }
 
-    var accessorKind: SymbolDeclaration.Accessor? {
+    var accessorKind: SymbolDeclaration.AccessorKind? {
         switch kind {
         case .getter: return .getter
         case .globalGetter: return .getter
         case .setter: return .setter
+        case .unsafeAddressor: return .unsafeAddressor
+        case .unsafeMutableAddressor: return .unsafeMutableAddressor
         case .readAccessor: return .read
         case .read2Accessor, .yieldingBorrowAccessor: return .read
         case .modifyAccessor: return .modify
@@ -63,10 +67,8 @@ internal extension SwiftSymbol {
         case .opaqueReturnTypeOf: return .descriptor
         case .protocolConformanceDescriptor: return .descriptor
         case .protocolConformanceDescriptorRecord: return .descriptor
-        case .dispatchThunk: return .auxiliary
-        case .curryThunk: return .auxiliary
-        case .protocolWitnessTable: return .auxiliary
-        case .protocolWitnessTableAccessor: return .auxiliary
+        case .dispatchThunk, .curryThunk, .protocolWitnessTable, .protocolWitnessTableAccessor:
+            return .auxiliary(kind)
         default: return nil
         }
     }

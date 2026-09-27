@@ -2,7 +2,7 @@ import SwiftDemangle
 
 /// Preserves a successfully parsed input even when declaration extraction is unsupported.
 public struct SymbolRecord {
-    public enum Role {
+    public enum Role: Equatable {
         // Declaration-related symbols.
         case declaration
         case metadata
@@ -10,12 +10,25 @@ public struct SymbolRecord {
         case accessor
 
         // Auxiliary and unclassified symbols.
-        case auxiliary
+        /// Identifies the auxiliary node; the full tree retains any additional attributes.
+        case auxiliary(SwiftSymbol.Kind)
         case unsupported
     }
 
+    /// The input spelling from extraction, or the normalized spelling in a store.
     public let mangledSymbol: String
+    /// All observed spellings, including an optional linker underscore.
+    public internal(set) var mangledSymbols: Set<String>
     public let demangledSymbol: SwiftSymbol
     public let role: Role
     public let declarationIDs: Set<SymbolDeclaration.ID>
+
+    internal init(mangledSymbol: String, demangledSymbol: SwiftSymbol, role: Role,
+                  declarationIDs: Set<SymbolDeclaration.ID>) {
+        self.mangledSymbol = mangledSymbol
+        self.mangledSymbols = [mangledSymbol]
+        self.demangledSymbol = demangledSymbol
+        self.role = role
+        self.declarationIDs = declarationIDs
+    }
 }

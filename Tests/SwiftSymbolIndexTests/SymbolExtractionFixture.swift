@@ -112,7 +112,7 @@ enum SymbolExtractionFixture: CaseIterable {
         }
     }
 
-    var expectedAccessors: Set<SymbolDeclaration.Accessor> {
+    var expectedAccessors: Set<SymbolDeclaration.AccessorKind> {
         switch self {
         case .getter: return [.getter]
         case .setter: return [.setter]

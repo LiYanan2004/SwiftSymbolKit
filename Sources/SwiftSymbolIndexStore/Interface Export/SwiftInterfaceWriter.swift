@@ -36,7 +36,7 @@ public struct SwiftInterfaceWriter {
         self.config = config
     }
 
-    public func write(_ index: SymbolIndex) throws -> Output {
+    public func write(_ index: SymbolIndexStore) throws -> Output {
         // TODO: Emit interface headers from Config, validating module-name consistency
         // and escaping compiler flag arguments. Emit explicit imports deterministically.
         // Traverse declaration contexts to render nested types and group extensions by

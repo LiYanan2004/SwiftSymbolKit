@@ -28,7 +28,7 @@ struct SwiftInterfaceCommand: ParsableCommand {
             throw ValidationError("The TBD file contains no exported Swift symbols.")
         }
 
-        var store = SymbolStore()
+        var store = SymbolIndexStore()
         for symbol in symbols {
             let result = try store.merge(symbol)
             writeDiagnostics(result.diagnostics)
@@ -38,7 +38,7 @@ struct SwiftInterfaceCommand: ParsableCommand {
             moduleName: moduleName ?? input.deletingPathExtension().lastPathComponent,
             compilerVersion: compilerVersion
         ))
-        let interface = try writer.write(store.index)
+        let interface = try writer.write(store)
         writeDiagnostics(interface.diagnostics)
         if let output {
             try interface.text.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
