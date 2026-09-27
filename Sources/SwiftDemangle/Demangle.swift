@@ -66,16 +66,21 @@ enum SpecializationPass {
 	case capturePropagation
 	case functionSignatureOpts
 	case genericSpecializer
+	case moveDiagnosticInOutToOut
+	case asyncDemotion
+	case packSpecialization
+	case embeddedWitnessCallSpecialization
 }
 
-enum Differentiability: UnicodeScalar {
+enum MangledDifferentiabilityKind: UnicodeScalar {
+	case nonDifferentiable = "\0"
 	case normal = "d"
 	case linear = "l"
 	case forward = "f"
 	case reverse = "r"
 	
 	init?(_ uint64: UInt64) {
-		guard let uint32 = UInt32(exactly: uint64), let scalar = UnicodeScalar(uint32), let value = Differentiability(rawValue: scalar) else { return nil }
+		guard let uint32 = UInt32(exactly: uint64), let scalar = UnicodeScalar(uint32), let value = MangledDifferentiabilityKind(rawValue: scalar) else { return nil }
 		self = value
 	}
 }
@@ -129,8 +134,8 @@ enum ValueWitnessKind: UInt64, CustomStringConvertible {
 	case assignWithTake = 2
 	case deallocateBuffer = 3
 	case destroy = 4
-	case destroyArray = 5
-	case destroyBuffer = 6
+	case destroyBuffer = 5
+	case destroyArray = 6
 	case initializeBufferWithCopyOfBuffer = 7
 	case initializeBufferWithCopy = 8
 	case initializeWithCopy = 9

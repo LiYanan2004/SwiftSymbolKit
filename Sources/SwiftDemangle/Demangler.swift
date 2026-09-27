@@ -11,7 +11,7 @@ let maxNumWords = 26
 
 struct Demangler<C> where C: Collection, C.Iterator.Element == UnicodeScalar {
 	var scanner: ScalarScanner<C>
-	var nameStack: [SwiftSymbol] = []
+	var nodeStack: [SwiftSymbol] = []
 	var substitutions: [SwiftSymbol] = []
 	var words: [String] = []
 	var symbolicReferences: [Int32] = []

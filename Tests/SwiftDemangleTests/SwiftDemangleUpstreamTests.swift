@@ -2,7 +2,7 @@ import Foundation
 @testable import SwiftDemangle
 import Testing
 
-// swiftlang/swift, commit 7e8c70b0f7825128212f6dd1146c1f00b98d7a3f.
+// swiftlang/swift, commit dd2b2263096c1da3103638de88b34460505cddb1.
 // Fixtures are copied from test/Demangle/Inputs, under Apache-2.0 with the Swift exception.
 struct SwiftDemangleUpstreamTests {
     enum Corpus: String, CaseIterable {
@@ -87,13 +87,13 @@ struct SwiftDemangleUpstreamTests {
         let fixedArray = try SwiftSymbol("$2_SiBV", isType: true)
         #expect(fixedArray.kind == .type)
         #expect(fixedArray.children.first?.kind == .builtinFixedArray)
-        let function = try SwiftSymbol("yySiXyc", isType: true)
-        #expect(function.children.first?.children.first?.kind == .yieldTypes)
+        let function = try SwiftSymbol("ySiXyyc", isType: true)
+        #expect(function.children.first?.children.at(1)?.kind == .yieldTypes)
         let opaque = try SwiftSymbol("QR0_", isType: true)
         #expect(opaque.children.first?.children.first?.kind == .opaqueReturnTypeIndex)
         #expect(opaque.children.first?.children.first?.index == 1)
         #expect(try SwiftSymbol("Si\0ignored", isType: true).print() == "Swift.Int")
-        #expect(getManglingPrefixLength("@__swiftmacro_".unicodeScalars) == 13)
+        #expect(Demangle.getManglingPrefixLength("@__swiftmacro_".unicodeScalars) == 13)
     }
 
     @Test func symbolicReferences() throws {

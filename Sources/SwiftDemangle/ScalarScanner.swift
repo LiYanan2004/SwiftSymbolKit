@@ -84,6 +84,20 @@ struct ScalarScanner<C: Collection> where C.Iterator.Element == UnicodeScalar {
 		index = scalars.startIndex
 		consumed = 0
 	}
+
+	/// Reads a length-prefixed string whose length is measured in UTF-8 bytes.
+	mutating func readUTF8(count: Int) throws -> String {
+		var remaining = count
+		var result = String.UnicodeScalarView()
+		while remaining > 0 {
+			let scalar = try readScalar()
+			let byteCount = scalar.utf8.count
+			guard byteCount <= remaining else { throw SwiftSymbolParseError.utf8ParseError }
+			result.append(scalar)
+			remaining -= byteCount
+		}
+		return String(result)
+	}
 	
 	/// Throw if the scalars at the current `index` don't match the scalars in `value`. Advance the `index` to the end of the match.
 	/// WARNING: `string` is used purely for its `unicodeScalars` property and matching is purely based on direct scalar comparison (no decomposition or normalization is performed).

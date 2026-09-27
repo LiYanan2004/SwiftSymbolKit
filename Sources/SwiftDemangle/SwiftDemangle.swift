@@ -42,7 +42,7 @@ extension SwiftSymbol {
 			return
 		}
 		let mangledName = String(String.UnicodeScalarView(mangledSymbol))
-		let isModernSymbol = getManglingPrefixLength(mangledSymbol) != 0 || mangledName.hasPrefix("async_Main") || mangledName.hasPrefix("_async_Main")
+		let isModernSymbol = Demangle.getManglingPrefixLength(mangledSymbol) != 0 || mangledName.hasPrefix("async_Main") || mangledName.hasPrefix("_async_Main")
 		self = try isModernSymbol ? demangler.demangleSymbol() : demangler.demangleSwift3TopLevelSymbol()
 		originalMangling = mangledName
 	}
@@ -65,8 +65,8 @@ extension SwiftSymbol {
 extension SwiftSymbol: CustomStringConvertible {
 	/// Overridden method to allow simple printing with default options
 	public var description: String {
-		var printer = SymbolPrinter()
-		_ = printer.printName(self)
+		var printer = NodePrinter()
+		_ = printer.print(self)
 		return printer.target
 	}
 	
@@ -75,8 +75,8 @@ extension SwiftSymbol: CustomStringConvertible {
 	/// - Parameter options: an option set containing the different `DemangleOptions` from the Swift project.
 	/// - Returns: `self` printed to a string according to the specified options.
 	public func print(using options: SymbolPrintOptions = .default) -> String {
-		var printer = SymbolPrinter(options: options)
-		_ = printer.printName(self)
+		var printer = NodePrinter(options: options)
+		_ = printer.print(self)
 		if options.contains(.classify), let originalMangling {
 			return Self.classificationPrefix(for: originalMangling, symbol: self) + printer.target
 		}
@@ -87,11 +87,11 @@ extension SwiftSymbol: CustomStringConvertible {
 private extension SwiftSymbol {
 	static func classificationPrefix(for mangledName: String, symbol: SwiftSymbol?) -> String {
 		var classifications: [String] = []
-		if !mangledName.hasPrefix("async_Main") && !mangledName.hasPrefix("_async_Main") && !mangledName.hasPrefix("_T") && getManglingPrefixLength(mangledName.unicodeScalars) == 0 {
+		if !mangledName.hasPrefix("async_Main") && !mangledName.hasPrefix("_async_Main") && !mangledName.hasPrefix("_T") && Demangle.getManglingPrefixLength(mangledName.unicodeScalars) == 0 {
 			classifications.append("N")
 		}
 		if isThunkSymbol(mangledName, symbol: symbol) {
-			classifications.append("T:" + thunkTarget(mangledName))
+			classifications.append("T:" + getThunkTarget(mangledName))
 		}
 		if let symbol, symbol.kind != .global || symbol.children.first.map({ usesNonSwiftCallingConvention($0.kind) }) == true {
 			classifications.append("C")
@@ -112,8 +112,8 @@ private extension SwiftSymbol {
 	}
 
 	static func isThunkSymbol(_ mangledName: String, symbol: SwiftSymbol?) -> Bool {
-		if getManglingPrefixLength(mangledName.unicodeScalars) != 0 {
-			let name = Self.strippingAsyncContinuation(from: Self.strippingSuffix(from: mangledName))
+		if Demangle.getManglingPrefixLength(mangledName.unicodeScalars) != 0 {
+			let name = Self.stripAsyncContinuation(Self.stripSuffix(mangledName))
 			guard ["TA", "Ta", "To", "TO", "TR", "Tr", "TW", "fC"].contains(where: name.hasSuffix) else { return false }
 			let parsedSymbol = name == mangledName ? symbol : try? SwiftSymbol(name)
 			guard parsedSymbol?.kind == .global, let kind = parsedSymbol?.children.first?.kind else { return false }
@@ -131,10 +131,10 @@ private extension SwiftSymbol {
 		return ["To", "TO", "PA_", "PAo_"].contains(where: remainder.hasPrefix)
 	}
 
-	static func thunkTarget(_ mangledName: String) -> String {
-		if getManglingPrefixLength(mangledName.unicodeScalars) != 0 {
-			guard Self.strippingSuffix(from: mangledName) == mangledName else { return "" }
-			let name = Self.strippingAsyncContinuation(from: mangledName)
+	static func getThunkTarget(_ mangledName: String) -> String {
+		if Demangle.getManglingPrefixLength(mangledName.unicodeScalars) != 0 {
+			guard Self.stripSuffix(mangledName) == mangledName else { return "" }
+			let name = Self.stripAsyncContinuation(mangledName)
 			if ["TR", "Tr", "TW"].contains(where: name.hasSuffix) { return "" }
 			if name.hasSuffix("fC") { return String(name.dropLast()) + "c" }
 			return String(name.dropLast(2))
@@ -145,12 +145,12 @@ private extension SwiftSymbol {
 		return "_T" + remainder.dropFirst(2)
 	}
 
-	static func strippingSuffix(from mangledName: String) -> String {
+	static func stripSuffix(_ mangledName: String) -> String {
 		guard mangledName.last?.isNumber == true, let dot = mangledName.firstIndex(of: ".") else { return mangledName }
 		return String(mangledName[..<dot])
 	}
 
-	static func strippingAsyncContinuation(from mangledName: String) -> String {
+	static func stripAsyncContinuation(_ mangledName: String) -> String {
 		guard mangledName.hasSuffix("_") else { return mangledName }
 		var name = String(mangledName.dropLast())
 		while name.last?.isNumber == true { name.removeLast() }

@@ -53,12 +53,14 @@ extension SwiftSymbol {
 		case .sugaredDictionary: fallthrough
 		case .sugaredInlineArray: fallthrough
 		case .sugaredOptional: fallthrough
-		case .sugaredParen: return true
+		case .sugaredParen: fallthrough
 		case .tuple: fallthrough
 		case .tupleElementName: fallthrough
 		case .typeAlias: fallthrough
 		case .typeList: fallthrough
 		case .typeSymbolicReference: fallthrough
+		case .silPackDirect, .silPackIndirect, .constrainedExistentialRequirementList, .constrainedExistentialSelf:
+			return true
 		case .type:
 			return self.children.first.map { $0.isSimpleType } ?? false
 		case .protocolList:
@@ -99,4 +101,3 @@ enum TypePrinting {
 	case withColon
 	case functionStyle
 }
-
