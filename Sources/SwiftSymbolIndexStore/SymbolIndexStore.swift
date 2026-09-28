@@ -43,6 +43,7 @@ public struct SymbolIndexStore: Sendable {
         let mangledSymbol: String?
     }
     private var membersByID: [SymbolDeclaration.ID: Set<SymbolDeclaration.ID>] = [:]
+    private var opaqueEvidenceByDeclarationID: [SymbolDeclaration.ID: [Int: [SymbolEvidence]]] = [:]
 
     public private(set) var context: IndexingContext?
     public private(set) var primarySource: SymbolEvidenceSource?
@@ -64,6 +65,7 @@ public struct SymbolIndexStore: Sendable {
         case primarySourceRequired
         case differentPrimarySource
         case invalidExportEvidence
+        case unsupportedSupplementalFact
     }
 
     /// The single mutation boundary for parsed input. Matching, reconciliation and
@@ -83,8 +85,11 @@ public struct SymbolIndexStore: Sendable {
             throw IngestionError.primarySourceRequired
         }
 
+        if result.source.kind == .loadedImage {
+            return try mergeOpaqueReturnTypes(result)
+        }
         guard result.source.kind == .mangledSymbols, result.observations.isEmpty else {
-            fatalError("TODO: Match requested supplemental information, validate related observations, and retain target-scoped evidence.")
+            throw IngestionError.unsupportedSupplementalFact
         }
 
         let recordSymbols = Set(result.symbolRecords.map { MangledSymbolSource.normalizedSymbol($0.mangledSymbol) })
@@ -140,6 +145,78 @@ public struct SymbolIndexStore: Sendable {
 }
 
 fileprivate extension SymbolIndexStore {
+    mutating func mergeOpaqueReturnTypes(_ result: IndexingResult) throws -> MergeResult {
+        // The writer currently emits one interface without target conditionals.
+        // Never apply a host observation to other targets in a multi-target TBD.
+        guard result.context.targets == context?.targets else { throw IngestionError.incompatibleContext }
+        guard result.declarations.isEmpty, result.symbolRecords.isEmpty,
+              result.conformances.isEmpty, result.protocolRequirements.isEmpty,
+              result.runtimeSymbols.isEmpty, result.exportedSymbols.isEmpty,
+              result.exportedSymbolTargets.isEmpty else { throw IngestionError.invalidExportEvidence }
+        guard result.observations.allSatisfy({
+            if case .opaqueReturnType = $0.fact, case .mangledSymbol = $0.subject { return true }
+            return false
+        }) else { throw IngestionError.unsupportedSupplementalFact }
+        var affected = Set<SymbolDeclaration.ID>()
+        var diagnostics = result.diagnostics
+        for observation in result.observations {
+            guard case .mangledSymbol(let symbol) = observation.subject,
+                  case .opaqueReturnType(let recovered) = observation.fact else { continue }
+            let normalized = MangledSymbolSource.normalizedSymbol(symbol)
+            let candidates = symbolRecordsByMangledName[normalized]?.declarationIDs.filter {
+                guard let signature = declarationsByID[$0]?.signature else { return false }
+                return opaqueOrdinals(in: signature).contains(recovered.ordinal)
+            } ?? []
+            guard exportedSymbols.contains(normalized),
+                  symbolRecordsByMangledName[normalized]?.demangledSymbol.children.first?.kind == .opaqueTypeDescriptor,
+                  candidates.count == 1,
+                  let declarationID = candidates.first, recovered.parameterDepth >= 0 else {
+                diagnostics.append(.init(kind: .incompleteDeclaration,
+                    message: "Opaque observation does not match one exported declaration and result ordinal.",
+                    mangledSymbols: [symbol], declarationID: nil, severity: .warning))
+                continue
+            }
+            let incoming = SymbolEvidence(source: result.source, observation: observation)
+            var related = opaqueEvidenceByDeclarationID[declarationID]?[recovered.ordinal] ?? []
+            if !related.contains(where: {
+                $0.source == incoming.source && $0.observation.location == observation.location
+                    && $0.observation.fact == observation.fact
+            }) {
+                related.append(incoming)
+                evidence.append(incoming)
+                opaqueEvidenceByDeclarationID[declarationID, default: [:]][recovered.ordinal] = related
+            }
+            let subject = SymbolResolvedSubject.declaration(declarationID)
+            resolvedFactsBySubject[subject, default: []].removeAll {
+                if case .opaqueReturnType(let type) = $0.fact { return type.ordinal == recovered.ordinal }
+                return false
+            }
+            if related.allSatisfy({ $0.observation.fact == observation.fact }) {
+                let confidence: ResolvedSymbolFact.Confidence = Set(related.map { $0.source.lineageIdentifier }).count > 1 ? .corroborated : .singleSource
+                resolvedFactsBySubject[subject, default: []].append(.init(subject: subject, fact: observation.fact,
+                    confidence: confidence, evidence: related))
+            } else {
+                diagnostics.append(.init(kind: .conflictingInformation,
+                    message: "Conflicting opaque return type observations; the constraint remains unresolved.",
+                    mangledSymbols: [symbol], declarationID: declarationID))
+            }
+            affected.insert(declarationID)
+            sourcesByDeclarationID[declarationID, default: []].insert(result.source)
+        }
+        sources.insert(result.source)
+        let merged = mergeDeclarations(.init(source: result.source, context: result.context, diagnostics: diagnostics))
+        return .init(affectedDeclarationIDs: affected, diagnostics: merged.diagnostics)
+    }
+
+    func opaqueOrdinals(in node: DemangledNode) -> Set<Int> {
+        if node.kind == .opaqueReturnType {
+            if let child = node.children.first, case .index(let index) = child.contents,
+               let value = Int(exactly: index), value < Int.max { return [value + 1] }
+            return [0]
+        }
+        return Set(node.children.flatMap { opaqueOrdinals(in: $0) })
+    }
+
     mutating func mergeDeclarations(_ contribution: IndexingResult) -> MergeResult {
         var affectedDeclarationIDs: Set<SymbolDeclaration.ID> = []
         var incomingDiagnostics = contribution.diagnostics

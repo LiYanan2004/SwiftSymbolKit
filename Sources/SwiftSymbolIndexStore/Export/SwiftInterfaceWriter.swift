@@ -76,7 +76,10 @@ public struct SwiftInterfaceWriter {
 
     public func write(_ index: SymbolIndexStore) async throws -> Output {
         try Task.checkCancellation()
-        guard index.resolvedFactsBySubject.isEmpty, index.exportAssessmentsByDeclarationID.isEmpty else {
+        guard index.resolvedFactsBySubject.values.flatMap({ $0 }).allSatisfy({
+            if case .opaqueReturnType = $0.fact { return true }
+            return false
+        }), index.exportAssessmentsByDeclarationID.isEmpty else {
             fatalError("TODO: Render the store's reconciled declarations and facts using its export assessments.")
         }
         let header = try Trivia(pieces: headerLines().flatMap { [.lineComment($0), .newlines(1)] })

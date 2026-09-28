@@ -9,6 +9,8 @@ extension SymbolIndexStore {
         case mangledSymbols([String], context: IndexingContext)
         case swiftInterface(URL, requestedInformation: Set<SupplementalInformation>)
         case dyldSharedCache(URL, imageInstallName: String, requestedInformation: Set<SupplementalInformation>)
+        /// Loads a native image; library initializers may run.
+        case loadedImage(path: String, descriptorSymbols: [String], context: IndexingContext)
         /// A captured dump, including its tool version and invocation for provenance.
         case compilerDump(URL, producer: String, requestedInformation: Set<SupplementalInformation>)
     }
@@ -39,6 +41,8 @@ fileprivate extension SymbolIndexStore {
             return SwiftInterfaceSource(location: url.path, requestedInformation: requestedInformation)
         case .dyldSharedCache(let url, let imageInstallName, let requestedInformation):
             return DyldSharedCacheSource(location: url.path, imageInstallName: imageInstallName, requestedInformation: requestedInformation)
+        case .loadedImage(let path, let symbols, let context):
+            return LoadedImageSource(imagePath: path, descriptorSymbols: symbols, context: context)
         case .compilerDump(let url, let producer, let requestedInformation):
             return CompilerDumpSource(location: url.path, producer: producer, requestedInformation: requestedInformation)
         }

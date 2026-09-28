@@ -201,8 +201,15 @@ fileprivate extension InterfaceDeclarationRenderer {
         declaredTypeIDs.formUnion(requirementsByProtocolID.keys)
     }
 
-    func containsOpaqueReturnType(_ node: DemangledNode) -> Bool {
-        node.kind == .opaqueReturnType || node.children.contains(where: containsOpaqueReturnType)
+    func containsUnresolvedOpaqueReturnType(_ node: DemangledNode, types: InterfaceTypeRenderer) -> Bool {
+        if node.kind == .opaqueReturnType {
+            var ordinal = 0
+            if let child = node.children.first, case .index(let index) = child.contents,
+               let value = Int(exactly: index), value < Int.max { ordinal = value + 1 }
+            guard let recovered = types.opaqueReturnTypes[ordinal] else { return true }
+            return recovered.constraints.isEmpty || !recovered.sameTypeRequirements.isEmpty
+        }
+        return node.children.contains { containsUnresolvedOpaqueReturnType($0, types: types) }
     }
 
     func commentDeclaration(_ lines: [String]) -> DeclSyntax {
@@ -246,14 +253,22 @@ fileprivate extension InterfaceDeclarationRenderer {
             if let nameNode = declaration.nameNode, [.privateDeclName, .localDeclName].contains(nameNode.kind) {
                 diagnose(declaration, "Private or local declaration is emitted with its source name and public visibility; the original discriminator remains in the index.", severity: .warning)
             }
-            if let signature = declaration.signature, containsOpaqueReturnType(signature) {
+            var types = inheritedTypes
+            types.opaqueReturnTypes = Dictionary(uniqueKeysWithValues:
+                (index.resolvedFactsBySubject[.declaration(declaration.id)] ?? []).compactMap {
+                    guard case .opaqueReturnType(let type) = $0.fact else { return nil }
+                    return (type.ordinal, type)
+                })
+            if let signature = declaration.signature, containsUnresolvedOpaqueReturnType(signature, types: types) {
                 diagnose(declaration, "opaque return type is emitted as 'some'; its protocol constraints are unavailable.", severity: .warning)
+            }
+            if types.opaqueReturnTypes.values.contains(where: { !$0.sameTypeRequirements.isEmpty }) {
+                diagnose(declaration, "Opaque same-type requirements are retained in the index; primary associated type syntax is unavailable from the descriptor.", severity: .warning)
             }
             if let signature = declaration.signature,
                !InterfaceConstrainedExistential.occurrences(in: signature).isEmpty {
                 diagnose(declaration, "Primary associated type syntax follows encoded constraint order; the protocol's primary associated type declaration and source order are unavailable from mangling.", severity: .warning)
             }
-            var types = inheritedTypes
             let visibility = DeclModifierListSyntax {
                 if !inProtocol { DeclModifierSyntax(name: .keyword(.public)) }
             }

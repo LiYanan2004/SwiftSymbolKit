@@ -10,28 +10,63 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
         abstract: "Reconstruct a Swift interface from a TBD file.",
         discussion: "Reconstructs declarations recoverable from exported symbols. Validate the output with a Swift compiler before importing it."
     )
-
+    
     @Argument(help: "The local TBD file path.")
     var input: String
-
+    
     @Option(name: .shortAndLong, help: "The output file path. Defaults to standard output.")
     var output: String?
-
+    
+    @Flag(
+        inversion: .prefixedNo,
+        help: "Try to recover opaque type conformances from MachO images."
+    )
+    var parseOpaqueReturnType = true
+    
+    @Option(help: "The native image to load for opaque recovery. Defaults to the TBD install name.")
+    var imagePath: String?
+    
     mutating func run() async throws {
         let inputURL = URL(fileURLWithPath: (input as NSString).expandingTildeInPath)
         let stub = try TextBasedStub(yaml: String(contentsOf: inputURL, encoding: .utf8))
-        let symbolTargets = stub.swiftSymbolTargets
+        if imagePath != nil, !parseOpaqueReturnType {
+            throw ValidationError("--image-path requires --parse-opaque-return-type.")
+        }
+        let moduleName = inputURL.deletingPathExtension().lastPathComponent
+        let descriptors = stub.swiftSymbolTargets.filter { $0.key.hasSuffix("QOMQ") }
+        let opaqueContribution: IndexingResult?
+        if parseOpaqueReturnType, !descriptors.isEmpty {
+            opaqueContribution = try await LoadedImageSource(
+                imagePath: imagePath.map(\.expandingTildeInPath) ?? stub.installName,
+                descriptorSymbols: Array(descriptors.keys),
+                context: .init(moduleName: moduleName, targets: stub.targets),
+                descriptorSymbolTargets: descriptors
+            ).read()
+        } else { opaqueContribution = nil }
+        let selectedTargets = opaqueContribution?.context.targets ?? stub.targets
+        let symbolTargets = stub.swiftSymbolTargets.compactMapValues { targets -> Set<IndexingTarget>? in
+            let coverage = targets.intersection(selectedTargets)
+            return coverage.isEmpty ? nil : coverage
+        }
         guard !symbolTargets.isEmpty else {
             throw ValidationError("The TBD file contains no exported Swift symbols.")
         }
-
+        
         let context = IndexingContext(
-            moduleName: inputURL.deletingPathExtension().lastPathComponent,
-            targets: stub.targets
+            moduleName: moduleName,
+            targets: selectedTargets
         )
         var store = SymbolIndexStore()
-        try await mergeMangledSymbols(symbolTargets, context: context, location: inputURL.absoluteString, into: &store)
-
+        try await mergeMangledSymbols(
+            symbolTargets,
+            context: context,
+            location: inputURL.absoluteString,
+            into: &store
+        )
+        if let opaqueContribution {
+            try store.merge(opaqueContribution)
+        }
+        
         let writer = SwiftInterfaceWriter(configuration: .init(moduleName: context.moduleName))
         let interface = try await writer.write(store)
         writeDiagnostics(interface.diagnostics)
@@ -56,32 +91,40 @@ fileprivate extension SwiftInterfaceCommand {
     ) async throws {
         try Task.checkCancellation()
         let mangledSymbols = symbolTargets.keys.sorted()
-        let source = SymbolEvidenceSource(kind: .mangledSymbols, location: location,
-            artifactIdentifier: location, lineageIdentifier: location)
+        let source = SymbolEvidenceSource(
+            kind: .mangledSymbols,
+            location: location,
+            artifactIdentifier: location,
+            lineageIdentifier: location
+        )
         let windowSize = 4096
         for start in stride(from: 0, to: mangledSymbols.count, by: windowSize) {
             let inputs = Array(mangledSymbols[start..<min(start + windowSize, mangledSymbols.count)])
             let results = try await ParallelMap.map(inputs) { mangledSymbol in
                 Result {
-                    try MangledSymbolSource(exportedSymbols: [mangledSymbol], context: context,
-                        exportedSymbolTargets: [mangledSymbol: symbolTargets[mangledSymbol]!], source: source).parse()
+                    try MangledSymbolSource(
+                        exportedSymbols: [mangledSymbol],
+                        context: context,
+                        exportedSymbolTargets: [mangledSymbol: symbolTargets[mangledSymbol]!],
+                        source: source
+                    ).parse()
                 }
             }
             for (mangledSymbol, result) in zip(inputs, results) {
                 try Task.checkCancellation()
                 switch result {
-                case .success(let contribution):
-                    _ = try symbolIndexStore.merge(contribution)
-                case .failure(let error):
-                    Loggers.symbolExtraction.error(
-                        "Failed to parse symbol: \(String(describing: error), privacy: .public). Symbol: \(mangledSymbol, privacy: .public)"
-                    )
-                    throw error
+                    case .success(let contribution):
+                        _ = try symbolIndexStore.merge(contribution)
+                    case .failure(let error):
+                        Loggers.symbolExtraction.error(
+                            "Failed to parse symbol: \(String(describing: error), privacy: .public). Symbol: \(mangledSymbol, privacy: .public)"
+                        )
+                        throw error
                 }
             }
         }
     }
-
+    
     func writeDiagnostics(_ diagnostics: [SymbolDiagnostic]) {
         for diagnostic in diagnostics {
             let logger: Logger
@@ -96,5 +139,11 @@ fileprivate extension SwiftInterfaceCommand {
                 case .error: logger.error("\(diagnostic.message, privacy: .public)")
             }
         }
+    }
+}
+
+extension String {
+    var expandingTildeInPath: String {
+        (self as NSString).expandingTildeInPath
     }
 }

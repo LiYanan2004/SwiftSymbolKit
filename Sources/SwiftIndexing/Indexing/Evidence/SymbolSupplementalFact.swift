@@ -31,4 +31,5 @@ public enum SymbolSupplementalFact: Equatable, Sendable {
     case objectiveCName(String)
     /// Used to cross-check ABI facts; never replaces the mangled declaration's identity.
     case declarationSignature(String)
+    case opaqueReturnType(OpaqueReturnType)
 }

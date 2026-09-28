@@ -12,6 +12,7 @@ struct InterfaceTypeRenderer: Sendable {
 
     var genericParametersByDepth: [Int: [String]] = [:]
     var parameterPacks: Set<String> = []
+    var opaqueReturnTypes: [Int: OpaqueReturnType] = [:]
 
     static func identifier(_ name: String) throws -> TokenSyntax {
         if name.isValidSwiftIdentifier(for: .variableName) { return .identifier(name) }
@@ -122,6 +123,15 @@ struct InterfaceTypeRenderer: Sendable {
         case .isolated: return try specifiedType(.isolated, type(node.onlyChild()))
         case .compileTimeLiteral: return try specifiedType(._const, type(node.onlyChild()))
         case .opaqueReturnType:
+            let ordinal: Int
+            if let child = node.children.first, case .index(let index) = child.contents,
+               let value = Int(exactly: index), value < Int.max { ordinal = value + 1 }
+            else { ordinal = 0 }
+            if let recovered = opaqueReturnTypes[ordinal], !recovered.constraints.isEmpty,
+               recovered.sameTypeRequirements.isEmpty {
+                return try TypeSyntax(SomeOrAnyTypeSyntax(someOrAnySpecifier: .keyword(.some),
+                    constraint: composition(recovered.constraints.map(type))))
+            }
             return TypeSyntax(SomeOrAnyTypeSyntax(someOrAnySpecifier: .keyword(.some),
                 constraint: MissingTypeSyntax(placeholder: .identifier("", presence: .missing))))
         case .dynamicSelf: return TypeSyntax(IdentifierTypeSyntax(name: .keyword(.Self)))

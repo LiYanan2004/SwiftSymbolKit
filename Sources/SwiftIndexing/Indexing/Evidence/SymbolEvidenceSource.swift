@@ -10,6 +10,7 @@ public struct SymbolEvidenceSource: Hashable, Sendable {
         case mangledSymbols
         case swiftInterface
         case dyldSharedCache
+        case loadedImage
         case compilerDump
     }
 
@@ -22,8 +23,13 @@ public struct SymbolEvidenceSource: Hashable, Sendable {
     /// Includes the tool version and invocation when the artifact was generated.
     public let producer: String?
 
-    public init(kind: Kind, location: String, artifactIdentifier: String,
-                lineageIdentifier: String, producer: String? = nil) {
+    public init(
+        kind: Kind,
+        location: String,
+        artifactIdentifier: String,
+        lineageIdentifier: String,
+        producer: String? = nil
+    ) {
         self.kind = kind
         self.location = location
         self.artifactIdentifier = artifactIdentifier
