@@ -16,3 +16,8 @@ public enum SupplementalInformation: Hashable, Sendable {
     case objectiveCNames
     case associatedTypeWitnesses
 }
+
+public enum IndexingSourceError: Error {
+    case invalidContext
+    case invalidSymbolTargets
+}

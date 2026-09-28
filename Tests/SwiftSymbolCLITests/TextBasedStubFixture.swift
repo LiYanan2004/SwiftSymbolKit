@@ -42,6 +42,7 @@ enum TextBasedStubFixture: CaseIterable {
             --- !tapi-tbd
             tbd-version: 4
             install-name: /usr/lib/libExample.dylib
+            targets: [ arm64-macos ]
             ...
             """
         }

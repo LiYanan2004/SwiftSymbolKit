@@ -1,3 +1,4 @@
+import SwiftIndexing
 import SwiftDemangle
 import SwiftSymbolIndexStore
 

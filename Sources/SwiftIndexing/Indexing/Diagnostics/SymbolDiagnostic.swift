@@ -1,9 +1,16 @@
-import SwiftIndexing
 /// An extraction, merge or interface-generation issue with traceable input symbols.
 public struct SymbolDiagnostic: Sendable {
-    public typealias Kind = IndexingDiagnostic.Kind
+    public enum Kind: Hashable, Sendable {
+        case unsupportedSymbol
+        case conflictingInformation
+        case incompleteDeclaration
+    }
 
-    public typealias Severity = IndexingDiagnostic.Severity
+    public enum Severity: Sendable {
+        case info
+        case warning
+        case error
+    }
 
     public let severity: Severity
     public let kind: Kind
@@ -11,7 +18,7 @@ public struct SymbolDiagnostic: Sendable {
     public let mangledSymbols: Set<String>
     public let declarationID: SymbolDeclaration.ID?
 
-    internal init(kind: Kind, message: String, mangledSymbols: Set<String>,
+    package init(kind: Kind, message: String, mangledSymbols: Set<String>,
          declarationID: SymbolDeclaration.ID?, severity: Severity? = nil) {
         self.kind = kind
         self.message = message

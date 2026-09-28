@@ -1,3 +1,4 @@
+import SwiftIndexing
 import SwiftSymbolIndexStore
 
 /// Small, explicit inputs complement the complete SwiftData export fixture.

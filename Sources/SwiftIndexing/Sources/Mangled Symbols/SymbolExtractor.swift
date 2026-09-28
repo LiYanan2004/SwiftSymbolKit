@@ -4,13 +4,13 @@ import SwiftDemangle
 /// Unrecognized symbols retain their original tree and produce an unsupported diagnostic.
 public struct SymbolExtractor: Sendable {
     public struct ExtractionResult: Sendable {
-        public let record: ParsedSymbolRecord
+        public let record: SymbolRecord
         /// Ancestors precede their members. Referenced signature types are not declarations.
-        public let declarations: [ParsedDeclaration]
-        public let conformances: [ParsedConformance]
-        public let protocolRequirements: [ParsedProtocolRequirement]
-        public let runtimeSymbols: [ParsedRuntimeSymbol]
-        public let diagnostics: [IndexingDiagnostic]
+        public let declarations: [SymbolDeclaration]
+        public let conformances: [ProtocolConformance]
+        public let protocolRequirements: [ProtocolConformanceRequirement]
+        public let runtimeSymbols: [RuntimeSymbolRecord]
+        public let diagnostics: [SymbolDiagnostic]
     }
 
     public enum ExtractionError: Error {
@@ -28,11 +28,11 @@ public struct SymbolExtractor: Sendable {
 
     /// Supply the original spelling for provenance when passing a parsed tree.
     public func extract(_ symbol: SwiftSymbol, mangledSymbol: String) throws -> ExtractionResult {
-        var declarations: [ParsedDeclaration] = []
-        var conformances: [ParsedConformance] = []
-        var protocolRequirements: [ParsedProtocolRequirement] = []
-        var runtimeSymbols: [ParsedRuntimeSymbol] = []
-        var role = ParsedSymbolRecord.Role.declaration
+        var declarations: [SymbolDeclaration] = []
+        var conformances: [ProtocolConformance] = []
+        var protocolRequirements: [ProtocolConformanceRequirement] = []
+        var runtimeSymbols: [RuntimeSymbolRecord] = []
+        var role = SymbolRecord.Role.declaration
         do {
             try extractEntity(symbol, mangledSymbol: mangledSymbol, role: &role,
                               declarations: &declarations, conformances: &conformances,
@@ -40,17 +40,17 @@ public struct SymbolExtractor: Sendable {
         } catch let unsupported as UnsupportedNodeError {
             // Discard partial facts so unsupported contexts cannot leave orphan ancestors.
             return ExtractionResult(
-                record: ParsedSymbolRecord(mangledSymbol: mangledSymbol, demangledSymbol: symbol,
+                record: SymbolRecord(mangledSymbol: mangledSymbol, demangledSymbol: symbol,
                                      role: .unsupported, declarationIDs: []),
                 declarations: [], conformances: [], protocolRequirements: [], runtimeSymbols: [],
-                diagnostics: [IndexingDiagnostic(
+                diagnostics: [SymbolDiagnostic(
                     kind: .unsupportedSymbol, message: "Unsupported extraction node: \(unsupported.kind)",
                     mangledSymbols: [mangledSymbol], declarationID: nil
                 )]
             )
         }
         return ExtractionResult(
-            record: ParsedSymbolRecord(mangledSymbol: mangledSymbol, demangledSymbol: symbol, role: role,
+            record: SymbolRecord(mangledSymbol: mangledSymbol, demangledSymbol: symbol, role: role,
                                  declarationIDs: Set(declarations.map(\.id))),
             declarations: declarations, conformances: conformances,
             protocolRequirements: protocolRequirements, runtimeSymbols: runtimeSymbols, diagnostics: []
@@ -73,11 +73,11 @@ fileprivate extension SymbolExtractor {
     func extractEntity(
         _ symbol: SwiftSymbol,
         mangledSymbol: String,
-        role: inout ParsedSymbolRecord.Role,
-        declarations: inout [ParsedDeclaration],
-        conformances: inout [ParsedConformance],
-        protocolRequirements: inout [ParsedProtocolRequirement],
-        runtimeSymbols: inout [ParsedRuntimeSymbol]
+        role: inout SymbolRecord.Role,
+        declarations: inout [SymbolDeclaration],
+        conformances: inout [ProtocolConformance],
+        protocolRequirements: inout [ProtocolConformanceRequirement],
+        runtimeSymbols: inout [RuntimeSymbolRecord]
     ) throws {
         if symbol.kind == .global {
             let entities = symbol.children.filter { !$0.isEntityAttribute }
@@ -127,7 +127,7 @@ fileprivate extension SymbolExtractor {
             guard declaration.kind == .class else { throw UnsupportedNodeError(kind: declaration.kind) }
             let declarationID = try appendDeclaration(declaration, evidence: .contextOnly,
                                                       mangledSymbol: mangledSymbol, declarations: &declarations)
-            runtimeSymbols.append(ParsedRuntimeSymbol(
+            runtimeSymbols.append(RuntimeSymbolRecord(
                 kind: symbol.kind == .classMetadataBaseOffset ? .classMetadataBaseOffset : .methodLookupFunction,
                 declarationID: declarationID, mangledSymbols: [mangledSymbol]
             ))
@@ -152,13 +152,13 @@ fileprivate extension SymbolExtractor {
     @discardableResult
     func appendDeclaration(
         _ symbol: SwiftSymbol,
-        evidence: ParsedDeclaration.Evidence,
+        evidence: SymbolDeclaration.Evidence,
         mangledSymbol: String,
-        declarations: inout [ParsedDeclaration]
-    ) throws -> ParsedDeclaration.ID {
+        declarations: inout [SymbolDeclaration]
+    ) throws -> SymbolDeclaration.ID {
         var entity = symbol
         var isStatic = false
-        var accessors: Set<ParsedDeclaration.AccessorKind> = []
+        var accessors: Set<SymbolDeclaration.AccessorKind> = []
         var isEnumCase = false
         while entity.kind == .static || entity.accessorKind != nil || entity.kind == .enumCase {
             if entity.kind == .static {
@@ -219,8 +219,8 @@ fileprivate extension SymbolExtractor {
             identity = SwiftSymbol(kind: .static, children: [identity])
         }
 
-        let identifier = ParsedDeclaration.ID(structuralKey: identity.declarationKey)
-        declarations.append(ParsedDeclaration(
+        let identifier = SymbolDeclaration.ID(structuralKey: identity.declarationKey)
+        declarations.append(SymbolDeclaration(
             id: identifier, kind: isEnumCase ? .enumCase : declarationKind, name: name, nameNode: nameNode,
             context: context, evidence: evidence, isStatic: isStatic, signature: signature,
             parameterLabels: labels, genericSignature: signature?.declarationGenericSignature,
@@ -233,8 +233,8 @@ fileprivate extension SymbolExtractor {
     func extractContext(
         _ symbol: SwiftSymbol,
         mangledSymbol: String,
-        declarations: inout [ParsedDeclaration]
-    ) throws -> ParsedDeclarationContext {
+        declarations: inout [SymbolDeclaration]
+    ) throws -> DeclarationContext {
         if symbol.kind == .module {
             guard case .name(let moduleName) = symbol.contents else {
                 throw ExtractionError.invalidNode(kind: symbol.kind, reason: "Missing module name")
@@ -284,9 +284,9 @@ fileprivate extension SymbolExtractor {
 
     func appendAssociatedType(
         _ symbol: SwiftSymbol,
-        evidence: ParsedDeclaration.Evidence = .direct,
+        evidence: SymbolDeclaration.Evidence = .direct,
         mangledSymbol: String,
-        declarations: inout [ParsedDeclaration]
+        declarations: inout [SymbolDeclaration]
     ) throws {
         let reference = try singleChild(of: symbol)
         guard reference.kind == .dependentAssociatedTypeRef, reference.children.count == 2 else {
@@ -298,7 +298,7 @@ fileprivate extension SymbolExtractor {
         guard protocolDeclaration.kind == .protocol else { throw UnsupportedNodeError(kind: protocolDeclaration.kind) }
         let parent = try appendDeclaration(protocolDeclaration, evidence: .contextOnly,
                                           mangledSymbol: mangledSymbol, declarations: &declarations)
-        declarations.append(ParsedDeclaration(
+        declarations.append(SymbolDeclaration(
             id: .init(structuralKey: symbol.declarationKey), kind: .associatedType,
             name: try declarationName(reference.children[0]), nameNode: reference.children[0],
             context: .declaration(parent), evidence: evidence, isStatic: false,
@@ -310,8 +310,8 @@ fileprivate extension SymbolExtractor {
     func appendProtocolRequirement(
         _ symbol: SwiftSymbol,
         mangledSymbol: String,
-        declarations: inout [ParsedDeclaration],
-        requirements: inout [ParsedProtocolRequirement]
+        declarations: inout [SymbolDeclaration],
+        requirements: inout [ProtocolConformanceRequirement]
     ) throws {
         let isAssociatedType = symbol.kind == .associatedConformanceDescriptor
         guard symbol.children.count == (isAssociatedType ? 3 : 2) else {
@@ -350,7 +350,7 @@ fileprivate extension SymbolExtractor {
                 }
             }
         }
-        let protocolID = ParsedDeclaration.ID(structuralKey: protocolDeclaration.declarationKey)
+        let protocolID = SymbolDeclaration.ID(structuralKey: protocolDeclaration.declarationKey)
         // Only infer a member when its qualifier identifies this protocol. Subsequent
         // components and inherited associated types remain qualified references.
         if let root = path.first, root.children.count == 2,
@@ -362,13 +362,13 @@ fileprivate extension SymbolExtractor {
             try appendDeclaration(protocolDeclaration, evidence: .contextOnly,
                                   mangledSymbol: mangledSymbol, declarations: &declarations)
         }
-        requirements.append(ParsedProtocolRequirement(
+        requirements.append(ProtocolConformanceRequirement(
             protocolID: protocolID, associatedTypePath: path,
             requiredProtocol: requiredProtocol, mangledSymbols: [mangledSymbol]
         ))
     }
 
-    func extractConformance(_ symbol: SwiftSymbol, mangledSymbol: String) throws -> ParsedConformance {
+    func extractConformance(_ symbol: SwiftSymbol, mangledSymbol: String) throws -> ProtocolConformance {
         guard symbol.children.count == 3 else { throw UnsupportedNodeError(kind: symbol.kind) }
         let conformingType = symbol.children[0]
         let protocolType = symbol.children[1]
@@ -377,7 +377,7 @@ fileprivate extension SymbolExtractor {
               module.kind == .module, case .name(let moduleName) = module.contents else {
             throw ExtractionError.invalidNode(kind: symbol.kind, reason: "Invalid protocol conformance layout")
         }
-        return ParsedConformance(
+        return ProtocolConformance(
             conformingType: conformingType, protocolType: protocolType, moduleName: moduleName,
             genericSignature: conformingType.declarationGenericSignature, mangledSymbols: [mangledSymbol]
         )

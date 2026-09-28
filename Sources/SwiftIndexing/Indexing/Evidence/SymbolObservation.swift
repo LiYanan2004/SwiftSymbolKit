@@ -10,3 +10,4 @@ public struct SymbolObservation: Sendable {
         self.location = location
     }
 }
+

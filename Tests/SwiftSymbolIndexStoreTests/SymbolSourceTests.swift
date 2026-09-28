@@ -3,7 +3,7 @@ import SwiftIndexing
 import Testing
 
 struct SymbolSourceTests {
-    private static let context = IndexingContext(moduleName: "Example", targetTriple: "arm64-apple-macosx", sdkIdentifier: "test")
+    private static let context = IndexingContext(moduleName: "Example", targets: [.init(architecture: .arm64, platform: .macOS)])
     private static let symbols = ["_$s7Example3FooVMn", "$s7Example3FooV8computedSivg"]
 
     @Test func parsedContributionAndConvenienceInputProduceTheSameInterface() async throws {
@@ -34,7 +34,7 @@ struct SymbolSourceTests {
     @Test func sourcePreservesContextAndProvenanceWhenBuildingContribution() async throws {
         let context = IndexingContext(
             moduleName: "Example",
-            targetTriple: "arm64-apple-macosx",
+            targets: [.init(architecture: .arm64, platform: .macOS)],
             sdkIdentifier: "sdk-a"
         )
         let provenance = SymbolEvidenceSource(kind: .mangledSymbols, location: "Example.tbd",
@@ -51,13 +51,13 @@ struct SymbolSourceTests {
     }
 
     @Test func incompatibleSourceLeavesIndexUnchanged() async throws {
-        let context = IndexingContext(moduleName: "Example", targetTriple: "arm64-apple-macosx", sdkIdentifier: "sdk-a")
+        let context = IndexingContext(moduleName: "Example", targets: [.init(architecture: .arm64, platform: .macOS)], sdkIdentifier: "sdk-a")
         var index = SymbolIndexStore()
         try await index.ingest(MangledSymbolSource(exportedSymbols: [Self.symbols[0]], context: context))
         let identifiers = Set(index.declarationsByID.keys)
         let sources = index.sources
         let source = MangledSymbolSource(exportedSymbols: Self.symbols, context: .init(
-            moduleName: context.moduleName, targetTriple: context.targetTriple, sdkIdentifier: "sdk-b"))
+            moduleName: context.moduleName, targets: context.targets, sdkIdentifier: "sdk-b"))
         do {
             try await index.ingest(source)
             Issue.record("Expected a context mismatch")

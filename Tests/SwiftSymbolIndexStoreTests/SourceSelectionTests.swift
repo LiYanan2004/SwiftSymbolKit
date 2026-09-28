@@ -4,7 +4,7 @@ import SwiftIndexing
 import Testing
 
 struct SourceSelectionTests {
-    private static let context = IndexingContext(moduleName: "Example", targetTriple: "arm64-apple-macosx", sdkIdentifier: "test")
+    private static let context = IndexingContext(moduleName: "Example", targets: [.init(architecture: .arm64, platform: .macOS)])
     @Test func selectsSourcesAndExportsThroughIndexStore() async throws {
         var index = SymbolIndexStore()
         try await index.ingest(sources: [

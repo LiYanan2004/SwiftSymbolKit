@@ -50,13 +50,17 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
 
     mutating func run() async throws {
         let stub = try TextBasedStub(yaml: String(contentsOf: input, encoding: .utf8))
-        let symbols = stub.swiftSymbols
-        guard !symbols.isEmpty else {
+        let symbolTargets = stub.swiftSymbolTargets
+        guard !symbolTargets.isEmpty else {
             throw ValidationError("The TBD file contains no exported Swift symbols.")
         }
 
+        let context = IndexingContext(
+            moduleName: input.deletingPathExtension().lastPathComponent,
+            targets: stub.targets
+        )
         var store = SymbolIndexStore()
-        try await mergeMangledSymbols(symbols, location: input.absoluteString, into: &store)
+        try await mergeMangledSymbols(symbolTargets, context: context, location: input.absoluteString, into: &store)
 
         var compilerFlags: [String] = []
         if let target {
@@ -92,11 +96,13 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
 
 fileprivate extension SwiftInterfaceCommand {
     func mergeMangledSymbols(
-        _ mangledSymbols: [String],
+        _ symbolTargets: [String: Set<IndexingTarget>],
+        context: IndexingContext,
         location: String,
         into symbolIndexStore: inout SymbolIndexStore
     ) async throws {
         try Task.checkCancellation()
+        let mangledSymbols = symbolTargets.keys.sorted()
         let source = SymbolEvidenceSource(kind: .mangledSymbols, location: location,
             artifactIdentifier: location, lineageIdentifier: location)
         let windowSize = 4096
@@ -104,7 +110,8 @@ fileprivate extension SwiftInterfaceCommand {
             let inputs = Array(mangledSymbols[start..<min(start + windowSize, mangledSymbols.count)])
             let results = try await ParallelMap.map(inputs) { mangledSymbol in
                 Result {
-                    try MangledSymbolSource(exportedSymbols: [mangledSymbol], source: source).parse()
+                    try MangledSymbolSource(exportedSymbols: [mangledSymbol], context: context,
+                        exportedSymbolTargets: [mangledSymbol: symbolTargets[mangledSymbol]!], source: source).parse()
                 }
             }
             for (mangledSymbol, result) in zip(inputs, results) {

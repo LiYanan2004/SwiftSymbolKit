@@ -1,18 +1,29 @@
-import SwiftIndexing
+import SwiftDemangle
 
 /// Preserves a successfully parsed input even when declaration extraction is unsupported.
 public struct SymbolRecord: Sendable {
-    public typealias Role = ParsedSymbolRecord.Role
+    public enum Role: Equatable, Sendable {
+        // Declaration-related symbols.
+        case declaration
+        case metadata
+        case descriptor
+        case accessor
+
+        // Auxiliary and unclassified symbols.
+        /// Identifies the auxiliary node; the full tree retains any additional attributes.
+        case auxiliary(SwiftSymbol.Kind)
+        case unsupported
+    }
 
     /// The input spelling from extraction, or the normalized spelling in a store.
     public let mangledSymbol: String
     /// All observed spellings, including an optional linker underscore.
-    public internal(set) var mangledSymbols: Set<String>
-    public let demangledSymbol: DemangledNode
+    public package(set) var mangledSymbols: Set<String>
+    public let demangledSymbol: SwiftSymbol
     public let role: Role
     public let declarationIDs: Set<SymbolDeclaration.ID>
 
-    internal init(mangledSymbol: String, demangledSymbol: DemangledNode, role: Role,
+    package init(mangledSymbol: String, demangledSymbol: SwiftSymbol, role: Role,
                   declarationIDs: Set<SymbolDeclaration.ID>) {
         self.mangledSymbol = mangledSymbol
         self.mangledSymbols = [mangledSymbol]

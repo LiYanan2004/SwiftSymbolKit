@@ -1,7 +1,7 @@
 import SwiftDemangle
 
 package extension SwiftSymbol {
-    var declarationKind: ParsedDeclaration.Kind? {
+    var declarationKind: SymbolDeclaration.Kind? {
         switch kind {
         case .structure: return .structure
         case .enum: return .enumeration
@@ -19,7 +19,7 @@ package extension SwiftSymbol {
         }
     }
 
-    var accessorKind: ParsedDeclaration.AccessorKind? {
+    var accessorKind: SymbolDeclaration.AccessorKind? {
         switch kind {
         case .getter: return .getter
         case .globalGetter: return .getter
@@ -39,7 +39,7 @@ package extension SwiftSymbol {
     }
 
     /// Only wrappers whose single child identifies the represented declaration or conformance.
-    var extractionRole: ParsedSymbolRecord.Role? {
+    var extractionRole: SymbolRecord.Role? {
         switch kind {
         case .typeMetadata: return .metadata
         case .typeMetadataAccessFunction: return .metadata

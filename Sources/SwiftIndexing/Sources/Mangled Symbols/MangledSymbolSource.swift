@@ -2,15 +2,19 @@ import SwiftDemangle
 
 /// Parses the target-filtered symbols supplied by the authoritative export surface.
 public struct MangledSymbolSource: IndexingSource {
-    public let context: IndexingContext?
+    public let context: IndexingContext
     public let source: SymbolEvidenceSource
     public let exportedSymbols: [String]
+    public let exportedSymbolTargets: [String: Set<IndexingTarget>]
 
-    public init(exportedSymbols: [String], context: IndexingContext? = nil,
+    public init(exportedSymbols: [String], context: IndexingContext,
+                exportedSymbolTargets: [String: Set<IndexingTarget>]? = nil,
                 source: SymbolEvidenceSource = .init(kind: .mangledSymbols, location: "caller",
                     artifactIdentifier: "caller-supplied-exports", lineageIdentifier: "caller-supplied-exports")) {
         self.exportedSymbols = exportedSymbols
         self.context = context
+        self.exportedSymbolTargets = exportedSymbolTargets
+            ?? Dictionary(uniqueKeysWithValues: Set(exportedSymbols).map { ($0, context.targets) })
         self.source = source
     }
 
@@ -20,6 +24,11 @@ public struct MangledSymbolSource: IndexingSource {
 
     /// Shared by synchronous and asynchronous indexing entry points within this target.
     package func parse() throws -> IndexingResult {
+        guard context.isValid else { throw IndexingSourceError.invalidContext }
+        guard Set(exportedSymbolTargets.keys) == Set(exportedSymbols),
+              exportedSymbolTargets.values.allSatisfy({ !$0.isEmpty && $0.isSubset(of: context.targets) }) else {
+            throw IndexingSourceError.invalidSymbolTargets
+        }
         var extractions: [SymbolExtractor.ExtractionResult] = []
         for mangledSymbol in exportedSymbols {
             try Task.checkCancellation()
@@ -35,7 +44,8 @@ public struct MangledSymbolSource: IndexingSource {
             protocolRequirements: extractions.flatMap(\.protocolRequirements),
             runtimeSymbols: extractions.flatMap(\.runtimeSymbols),
             diagnostics: extractions.flatMap(\.diagnostics),
-            exportedSymbols: Set(exportedSymbols)
+            exportedSymbols: Set(exportedSymbols),
+            exportedSymbolTargets: exportedSymbolTargets
         )
     }
 }

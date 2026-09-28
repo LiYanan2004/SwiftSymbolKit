@@ -1,14 +1,14 @@
 import SwiftDemangle
 
-/// A declaration observed in a source, before matching into the canonical index.
-public struct ParsedDeclaration: Sendable {
-    /// A source reference. Mangled input uses a structural key; other inputs require semantic matching.
+/// A declaration extracted from source facts and shared with the symbol index.
+public struct SymbolDeclaration: Sendable {
+    /// Structural identity shared by extraction, evidence and the symbol index.
     public struct ID: Hashable, Sendable {
         // Length-prefixed node encoding includes context, discriminators and signature.
         // This key is an implementation detail, not a persistent serialization format.
         package let structuralKey: String
 
-        internal init(structuralKey: String) {
+        package init(structuralKey: String) {
             self.structuralKey = structuralKey
         }
     }
@@ -66,27 +66,27 @@ public struct ParsedDeclaration: Sendable {
     }
 
     public let id: ID
-    public let kind: Kind
-    public let name: String
+    public package(set) var kind: Kind
+    public package(set) var name: String
     /// Original named-declaration node, including operator fixity or private/local discriminators.
     /// Initializers, deinitializers and subscripts have no named-declaration node.
-    public let nameNode: SwiftSymbol?
-    public let context: ParsedDeclarationContext
-    public let evidence: Evidence
-    public let isStatic: Bool
+    public package(set) var nameNode: SwiftSymbol?
+    public package(set) var context: DeclarationContext
+    public package(set) var evidence: Evidence
+    public package(set) var isStatic: Bool
     /// Structured demangle nodes retained until dedicated signature models are introduced.
     /// A missing signature means unknown, rather than a function with no parameters.
-    public let signature: SwiftSymbol?
+    public package(set) var signature: SwiftSymbol?
     /// External labels from the declaration's label list. An empty list denotes unlabeled
     /// parameters; nil means no separate label list was encoded (including legacy manglings).
-    public let parameterLabels: [String]?
+    public package(set) var parameterLabels: [String]?
     /// Requirements belonging to this declaration's generic scope.
-    public let genericSignature: SwiftSymbol?
+    public package(set) var genericSignature: SwiftSymbol?
     /// Observed accessors; absence alone does not establish source-level mutability.
-    public let accessors: Set<AccessorKind>
-    public let mangledSymbols: Set<String>
+    public package(set) var accessors: Set<AccessorKind>
+    public package(set) var mangledSymbols: Set<String>
 
-    internal init(id: ID, kind: Kind, name: String, nameNode: SwiftSymbol?, context: ParsedDeclarationContext,
+    package init(id: ID, kind: Kind, name: String, nameNode: SwiftSymbol?, context: DeclarationContext,
                  evidence: Evidence, isStatic: Bool, signature: SwiftSymbol?, parameterLabels: [String]?,
                  genericSignature: SwiftSymbol?, accessors: Set<AccessorKind>, mangledSymbols: Set<String>) {
         self.id = id

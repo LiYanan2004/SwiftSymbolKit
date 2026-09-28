@@ -1,3 +1,4 @@
+import SwiftIndexing
 import SwiftSymbolIndexStore
 
 /// Descriptor-only and incremental accessor evidence for source reconstruction.

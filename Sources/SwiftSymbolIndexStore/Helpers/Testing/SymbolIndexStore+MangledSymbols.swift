@@ -2,6 +2,11 @@ import SwiftIndexing
 
 @_spi(Testing)
 extension SymbolIndexStore {
+    /// Synthetic metadata is confined to the symbol-extraction test API.
+    private var testingContext: IndexingContext {
+        context ?? IndexingContext(moduleName: "Testing", targets: [.init(architecture: .arm64, platform: .macOS)])
+    }
+
     /// Merges one symbol, preserving its original spelling and all observed facts.
     /// Repeating an input has no effect. Parsing and extraction finish before mutation.
     @discardableResult
@@ -10,7 +15,7 @@ extension SymbolIndexStore {
         if symbolRecordsByMangledName[normalizedSymbol]?.mangledSymbols.contains(mangledSymbol) == true {
             return MergeResult(affectedDeclarationIDs: [], diagnostics: [])
         }
-        return try merge(try MangledSymbolSource(exportedSymbols: [mangledSymbol]).parse())
+        return try merge(try MangledSymbolSource(exportedSymbols: [mangledSymbol], context: testingContext).parse())
     }
 
     /// An invalid symbol encountered by a bulk merge. Earlier inputs remain indexed.
@@ -31,9 +36,10 @@ extension SymbolIndexStore {
                 seenSymbols.insert($0).inserted
                     && symbolRecordsByMangledName[MangledSymbolSource.normalizedSymbol($0)]?.mangledSymbols.contains($0) != true
             }
+            let context = testingContext
             let results = try await ParallelMap.map(inputs) { symbol in
                 Result {
-                    try MangledSymbolSource(exportedSymbols: [symbol]).parse()
+                    try MangledSymbolSource(exportedSymbols: [symbol], context: context).parse()
                 }
             }
             for (symbol, result) in zip(inputs, results) {

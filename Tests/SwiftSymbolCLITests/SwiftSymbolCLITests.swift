@@ -1,4 +1,5 @@
 import Foundation
+import SwiftIndexing
 import Testing
 @testable import SwiftSymbolCLI
 
@@ -10,6 +11,47 @@ struct SwiftSymbolCLITests {
             let stub = try TextBasedStub(yaml: fixture.input)
             #expect(stub.swiftSymbols == fixture.expectedSymbols)
         }
+    }
+
+    @Test
+    func retainsSymbolTargetCoverage() throws {
+        let arm = IndexingTarget(architecture: .arm64, platform: .macOS)
+        let intel = IndexingTarget(architecture: .x86_64, platform: .macOS)
+        let stub = try TextBasedStub(yaml: TextBasedStubFixture.multipleArchitectures.input)
+        #expect(stub.targets == [arm, intel])
+        #expect(stub.swiftSymbolTargets == [
+            "_$s7Example3FooV": [arm, intel],
+            "_$s7Example3BarV": [arm, intel],
+            "_$s7Example3BazV": [arm, intel],
+            "_$s7Example3QuxV": [arm],
+        ])
+        let weakSymbols = try TextBasedStub(yaml: TextBasedStubFixture.multipleArchitectures.input
+            .replacingOccurrences(of: "weak-def-symbols:", with: "weak-symbols:"))
+        #expect(weakSymbols.swiftSymbolTargets == stub.swiftSymbolTargets)
+    }
+
+    @Test
+    func rejectsInvalidTargetCoverage() {
+        let input = TextBasedStubFixture.multipleArchitectures.input
+        for targets in ["[ arm64-ios ]", "[]"] {
+            let invalid = input.replacingOccurrences(of: "targets: [ arm64-macos ]", with: "targets: " + targets)
+            #expect(throws: (any Error).self) { try TextBasedStub(yaml: invalid) }
+        }
+        let missing = TextBasedStubFixture.empty.input
+            .replacingOccurrences(of: "targets: [ arm64-macos ]", with: "")
+        #expect(throws: (any Error).self) { try TextBasedStub(yaml: missing) }
+    }
+
+    @Test
+    func normalizesLegacySimulatorTargets() throws {
+        let input = TextBasedStubFixture.legacy.input.replacingOccurrences(of: "platform: macosx", with: "platform: ios")
+        let stub = try TextBasedStub(yaml: input)
+        let targets: Set<IndexingTarget> = [
+            .init(architecture: .arm64, platform: .iOS),
+            .init(architecture: .x86_64, platform: .iOS, environment: .simulator),
+        ]
+        #expect(stub.targets == targets)
+        #expect(stub.swiftSymbolTargets.values.allSatisfy { $0 == targets })
     }
 
     @Test

@@ -3,7 +3,7 @@ import Testing
 
 struct IndexingSourceTests {
     @Test func parsesSymbolsWithoutAnIndexStore() async throws {
-        let context = IndexingContext(moduleName: "Example", targetTriple: "arm64-apple-macosx", sdkIdentifier: "test")
+        let context = IndexingContext(moduleName: "Example", targets: [.init(architecture: .arm64, platform: .macOS)], sdkIdentifier: "test")
         let source = MangledSymbolSource(exportedSymbols: ["_$s7Example3FooVMn"], context: context)
         let result = try await source.read()
         #expect(result.context == context)

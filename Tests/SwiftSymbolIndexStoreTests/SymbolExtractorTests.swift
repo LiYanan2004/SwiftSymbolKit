@@ -147,7 +147,7 @@ struct SymbolExtractorTests {
     }
 
     @Test func preservesDeclarationNamesAndDiscriminators() throws {
-        var identifiers: Set<ParsedDeclaration.ID> = []
+        var identifiers: Set<SymbolDeclaration.ID> = []
         for fixture in DeclarationNameFixture.allCases {
             var function = try SwiftSymbol(SymbolExtractionFixture.nestedMethod.input).children[0]
             function.children[1] = fixture.input

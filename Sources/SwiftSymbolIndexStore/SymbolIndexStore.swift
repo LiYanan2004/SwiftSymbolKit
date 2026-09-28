@@ -50,6 +50,7 @@ public struct SymbolIndexStore: Sendable {
     public private(set) var sourcesByDeclarationID: [SymbolDeclaration.ID: Set<SymbolEvidenceSource>] = [:]
     /// Normalized symbols supported by the selected TBD/export surface.
     public private(set) var exportedSymbols: Set<String> = []
+    public private(set) var exportedSymbolTargets: [String: Set<IndexingTarget>] = [:]
     public private(set) var evidence: [SymbolEvidence] = []
     public private(set) var resolvedFactsBySubject: [SymbolResolvedSubject: [ResolvedSymbolFact]] = [:]
     public private(set) var exportAssessmentsByDeclarationID: [SymbolDeclaration.ID: SymbolExportAssessment] = [:]
@@ -69,8 +70,9 @@ public struct SymbolIndexStore: Sendable {
     /// export eligibility belong to the index; source adapters only produce facts.
     @discardableResult
     public mutating func merge(_ result: IndexingResult) throws -> MergeResult {
-        if let context, let incomingContext = result.context {
-            guard incomingContext == context else { throw IngestionError.incompatibleContext }
+        guard result.context.isValid else { throw IngestionError.incompatibleContext }
+        if let context {
+            guard result.context.isCompatible(with: context) else { throw IngestionError.incompatibleContext }
         }
         if result.source.kind == .mangledSymbols {
             if let primarySource {
@@ -82,26 +84,30 @@ public struct SymbolIndexStore: Sendable {
         }
 
         guard result.source.kind == .mangledSymbols, result.observations.isEmpty else {
-            fatalError("TODO: Match requested supplemental information, validate related observations, and reconcile evidence.")
+            fatalError("TODO: Match requested supplemental information, validate related observations, and retain target-scoped evidence.")
         }
 
         let recordSymbols = Set(result.symbolRecords.map { MangledSymbolSource.normalizedSymbol($0.mangledSymbol) })
         let incomingExports = Set(result.exportedSymbols.map(MangledSymbolSource.normalizedSymbol))
         let supportedDeclarationIDs = Set(result.symbolRecords.flatMap(\.declarationIDs))
-        guard recordSymbols == incomingExports,
+        guard Set(result.exportedSymbolTargets.keys) == result.exportedSymbols,
+              result.exportedSymbolTargets.values.allSatisfy({ !$0.isEmpty && $0.isSubset(of: result.context.targets) }),
+              recordSymbols == incomingExports,
               Set(result.declarations.map(\.id)).isSubset(of: supportedDeclarationIDs) else {
             throw IngestionError.invalidExportEvidence
         }
 
-        let contribution = SymbolIndexContribution(mangledResult: result)
-        let mergeResult = mergeDeclarations(contribution)
+        let mergeResult = mergeDeclarations(result)
         context = result.context
         primarySource = result.source
         sources.insert(result.source)
-        for declaration in contribution.declarations {
+        for declaration in result.declarations {
             sourcesByDeclarationID[declaration.id, default: []].insert(result.source)
         }
         exportedSymbols.formUnion(incomingExports)
+        for (symbol, targets) in result.exportedSymbolTargets {
+            exportedSymbolTargets[MangledSymbolSource.normalizedSymbol(symbol), default: []].formUnion(targets)
+        }
         return mergeResult
     }
 
@@ -113,7 +119,7 @@ public struct SymbolIndexStore: Sendable {
             }
             .sorted { $0.id.structuralKey < $1.id.structuralKey }
     }
-
+    
     public func members(of declarationID: SymbolDeclaration.ID) -> [SymbolDeclaration] {
         (membersByID[declarationID] ?? [])
             .compactMap { declarationsByID[$0] }
@@ -134,7 +140,7 @@ public struct SymbolIndexStore: Sendable {
 }
 
 fileprivate extension SymbolIndexStore {
-    mutating func mergeDeclarations(_ contribution: SymbolIndexContribution) -> MergeResult {
+    mutating func mergeDeclarations(_ contribution: IndexingResult) -> MergeResult {
         var affectedDeclarationIDs: Set<SymbolDeclaration.ID> = []
         var incomingDiagnostics = contribution.diagnostics
 
@@ -251,5 +257,17 @@ fileprivate extension SymbolDeclaration {
 fileprivate extension ProtocolConformance {
     var mergeIdentity: [String] {
         [moduleName, conformingType.declarationKey, protocolType.declarationKey, genericSignature?.declarationKey ?? ""]
+    }
+}
+
+extension ProtocolConformanceRequirement {
+    var structuralIdentity: [String] {
+        [protocolID.structuralKey, requiredProtocol.declarationKey] + associatedTypePath.map(\.declarationKey)
+    }
+}
+
+extension RuntimeSymbolRecord {
+    var structuralIdentity: [String] {
+        [declarationID.structuralKey, String(describing: kind)]
     }
 }
