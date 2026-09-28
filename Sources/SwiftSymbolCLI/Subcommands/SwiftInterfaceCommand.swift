@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import OSLog
+import SwiftIndexing
 import SwiftSymbolIndexStore
 
 struct SwiftInterfaceCommand: AsyncParsableCommand {
@@ -55,12 +56,7 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
         }
 
         var store = SymbolIndexStore()
-        do {
-            try await store.merge(contentsOf: symbols)
-        } catch let error as SymbolIndexStore.MergeError {
-            Loggers.symbolExtraction.error("Failed to parse symbol: \(String(describing: error.underlyingError), privacy: .public). Symbol: \(error.mangledSymbol, privacy: .public)")
-            throw error.underlyingError
-        }
+        try await mergeMangledSymbols(symbols, location: input.absoluteString, into: &store)
 
         var compilerFlags: [String] = []
         if let target {
@@ -95,6 +91,37 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
 }
 
 fileprivate extension SwiftInterfaceCommand {
+    func mergeMangledSymbols(
+        _ mangledSymbols: [String],
+        location: String,
+        into symbolIndexStore: inout SymbolIndexStore
+    ) async throws {
+        try Task.checkCancellation()
+        let source = SymbolEvidenceSource(kind: .mangledSymbols, location: location,
+            artifactIdentifier: location, lineageIdentifier: location)
+        let windowSize = 4096
+        for start in stride(from: 0, to: mangledSymbols.count, by: windowSize) {
+            let inputs = Array(mangledSymbols[start..<min(start + windowSize, mangledSymbols.count)])
+            let results = try await ParallelMap.map(inputs) { mangledSymbol in
+                Result {
+                    try MangledSymbolSource(exportedSymbols: [mangledSymbol], source: source).parse()
+                }
+            }
+            for (mangledSymbol, result) in zip(inputs, results) {
+                try Task.checkCancellation()
+                switch result {
+                case .success(let contribution):
+                    _ = try symbolIndexStore.merge(contribution)
+                case .failure(let error):
+                    Loggers.symbolExtraction.error(
+                        "Failed to parse symbol: \(String(describing: error), privacy: .public). Symbol: \(mangledSymbol, privacy: .public)"
+                    )
+                    throw error
+                }
+            }
+        }
+    }
+
     static func inputURL(_ value: String) throws -> URL {
         if let url = URL(string: value), let scheme = url.scheme {
             guard ["file", "http", "https"].contains(scheme.lowercased()) else {

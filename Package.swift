@@ -12,7 +12,8 @@ let package = Package(
             name: "SwiftSymbolKit",
             targets: [
                 "SwiftDemangle",
-                "SwiftSymbolIndexStore"
+                "SwiftSymbolIndexStore",
+                "SwiftIndexing"
             ]
         ),
         .executable(name: "swift-symbol", targets: ["SwiftSymbolCLI"]),
@@ -23,9 +24,11 @@ let package = Package(
         .package(url: "https://github.com/swift-precompiled/swift-syntax.git", from: "603.0.2"),
     ],
     targets: [
+        .target(name: "SwiftIndexing", dependencies: ["SwiftDemangle"]),
         .executableTarget(
             name: "SwiftSymbolCLI",
             dependencies: [
+                "SwiftIndexing",
                 "SwiftSymbolIndexStore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Yams", package: "Yams"),
@@ -39,22 +42,22 @@ let package = Package(
         .target(
             name: "SwiftSymbolIndexStore",
             dependencies: [
-                "SwiftDemangle",
+                "SwiftIndexing",
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "SwiftBasicFormat", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
-            ],
-            path: "Sources/SwiftSymbolIndexStore"
+            ]
         ),
+        .testTarget(name: "SwiftIndexingTests", dependencies: ["SwiftIndexing"]),
         .testTarget(
-            name: "SwiftSymbolIndexTests",
+            name: "SwiftSymbolIndexStoreTests",
             dependencies: [
-                "SwiftSymbolIndexStore", "SwiftDemangle",
+                "SwiftSymbolIndexStore", "SwiftIndexing", "SwiftDemangle",
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
             ],
-            path: "Tests/SwiftSymbolIndexTests",
+            path: "Tests/SwiftSymbolIndexStoreTests",
             exclude: ["Fixtures"],
             resources: [.copy("TestData")]
         ),

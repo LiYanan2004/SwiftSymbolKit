@@ -1,6 +1,8 @@
+import SwiftIndexing
+
 /// One child task per input, with ordered results and cooperative cancellation.
-enum ParallelMap {
-    static func map<Input: Sendable, Output: Sendable>(
+package enum ParallelMap {
+    package static func map<Input: Sendable, Output: Sendable>(
         _ inputs: [Input],
         transform: @escaping @Sendable (Input) async throws -> Output
     ) async throws -> [Output] {

@@ -1,6 +1,7 @@
-import SwiftDemangle
+import SwiftIndexing
 
-/// Incrementally indexes declarations and relationships from mangled Swift symbols.
+/// Indexes declarations, relationships and evidence contributed by multiple sources.
+///
 /// The caller owns synchronization when sharing a store across concurrent work.
 public struct SymbolIndexStore: Sendable {
     public private(set) var declarationsByID: [SymbolDeclaration.ID: SymbolDeclaration] = [:]
@@ -19,7 +20,9 @@ public struct SymbolIndexStore: Sendable {
     }
     /// Class runtime support symbols, kept separately from source declarations.
     public var runtimeSymbols: [RuntimeSymbolRecord] {
-        runtimeSymbolsByIdentity.keys.sorted { $0.lexicographicallyPrecedes($1) }.map { runtimeSymbolsByIdentity[$0]! }
+        runtimeSymbolsByIdentity.keys
+            .sorted { $0.lexicographicallyPrecedes($1) }
+            .map { runtimeSymbolsByIdentity[$0]! }
     }
     public var diagnostics: [SymbolDiagnostic] {
         diagnosticsByIdentity.values.sorted {
@@ -41,17 +44,79 @@ public struct SymbolIndexStore: Sendable {
     }
     private var membersByID: [SymbolDeclaration.ID: Set<SymbolDeclaration.ID>] = [:]
 
+    public private(set) var context: IndexingContext?
+    public private(set) var primarySource: SymbolEvidenceSource?
+    public private(set) var sources: Set<SymbolEvidenceSource> = []
+    public private(set) var sourcesByDeclarationID: [SymbolDeclaration.ID: Set<SymbolEvidenceSource>] = [:]
+    /// Normalized symbols supported by the selected TBD/export surface.
+    public private(set) var exportedSymbols: Set<String> = []
+    public private(set) var evidence: [SymbolEvidence] = []
+    public private(set) var resolvedFactsBySubject: [SymbolResolvedSubject: [ResolvedSymbolFact]] = [:]
+    public private(set) var exportAssessmentsByDeclarationID: [SymbolDeclaration.ID: SymbolExportAssessment] = [:]
+    public private(set) var reconciliationIssues: [SymbolIndexIssue] = []
+
+    /// The first primary contribution establishes the context.
     public init() {}
 
+    public enum IngestionError: Error {
+        case incompatibleContext
+        case primarySourceRequired
+        case differentPrimarySource
+        case invalidExportEvidence
+    }
+
+    /// The single mutation boundary for parsed input. Matching, reconciliation and
+    /// export eligibility belong to the index; source adapters only produce facts.
+    @discardableResult
+    public mutating func merge(_ result: IndexingResult) throws -> MergeResult {
+        if let context, let incomingContext = result.context {
+            guard incomingContext == context else { throw IngestionError.incompatibleContext }
+        }
+        if result.source.kind == .mangledSymbols {
+            if let primarySource {
+                guard primarySource == result.source else { throw IngestionError.differentPrimarySource }
+                guard context == result.context else { throw IngestionError.incompatibleContext }
+            }
+        } else if primarySource == nil {
+            throw IngestionError.primarySourceRequired
+        }
+
+        guard result.source.kind == .mangledSymbols, result.observations.isEmpty else {
+            fatalError("TODO: Match requested supplemental information, validate related observations, and reconcile evidence.")
+        }
+
+        let recordSymbols = Set(result.symbolRecords.map { MangledSymbolSource.normalizedSymbol($0.mangledSymbol) })
+        let incomingExports = Set(result.exportedSymbols.map(MangledSymbolSource.normalizedSymbol))
+        let supportedDeclarationIDs = Set(result.symbolRecords.flatMap(\.declarationIDs))
+        guard recordSymbols == incomingExports,
+              Set(result.declarations.map(\.id)).isSubset(of: supportedDeclarationIDs) else {
+            throw IngestionError.invalidExportEvidence
+        }
+
+        let contribution = SymbolIndexContribution(mangledResult: result)
+        let mergeResult = mergeDeclarations(contribution)
+        context = result.context
+        primarySource = result.source
+        sources.insert(result.source)
+        for declaration in contribution.declarations {
+            sourcesByDeclarationID[declaration.id, default: []].insert(result.source)
+        }
+        exportedSymbols.formUnion(incomingExports)
+        return mergeResult
+    }
+
     public func declarations(inModule moduleName: String) -> [SymbolDeclaration] {
-        declarationsByID.values.filter {
-            guard case .module(let owner) = $0.context else { return false }
-            return owner == moduleName
-        }.sorted { $0.id.structuralKey < $1.id.structuralKey }
+        declarationsByID.values
+            .filter {
+                guard case .module(let owner) = $0.context else { return false }
+                return owner == moduleName
+            }
+            .sorted { $0.id.structuralKey < $1.id.structuralKey }
     }
 
     public func members(of declarationID: SymbolDeclaration.ID) -> [SymbolDeclaration] {
-        (membersByID[declarationID] ?? []).compactMap { declarationsByID[$0] }
+        (membersByID[declarationID] ?? [])
+            .compactMap { declarationsByID[$0] }
             .sorted { $0.id.structuralKey < $1.id.structuralKey }
     }
 
@@ -60,71 +125,20 @@ public struct SymbolIndexStore: Sendable {
         public let affectedDeclarationIDs: Set<SymbolDeclaration.ID>
         /// Diagnostics introduced or updated by this merge.
         public let diagnostics: [SymbolDiagnostic]
-    }
 
-    /// Merges one symbol, preserving its original spelling and all observed facts.
-    /// Repeating an input has no effect. Parsing and extraction finish before mutation.
-    @discardableResult
-    public mutating func merge(_ mangledSymbol: String) throws -> MergeResult {
-        let normalizedSymbol = Self.normalizedSymbol(mangledSymbol)
-        if symbolRecordsByMangledName[normalizedSymbol]?.mangledSymbols.contains(mangledSymbol) == true {
-            return MergeResult(affectedDeclarationIDs: [], diagnostics: [])
-        }
-        return merge(try Self.extract(mangledSymbol))
-    }
-
-    /// An invalid symbol encountered by a bulk merge. Earlier inputs remain indexed.
-    public struct MergeError: Error {
-        public let mangledSymbol: String
-        public let underlyingError: any Error
-    }
-
-    /// Extracts bounded batches in parallel and merges in input order.
-    /// Reports the first invalid input, preserving the same prefix as individual merges.
-    public mutating func merge(contentsOf mangledSymbols: [String]) async throws {
-        try Task.checkCancellation()
-        // Bound temporary demangle trees independently of the total input size.
-        let windowSize = 4096
-        for start in stride(from: 0, to: mangledSymbols.count, by: windowSize) {
-            var seenSymbols: Set<String> = []
-            let inputs = mangledSymbols[start..<min(start + windowSize, mangledSymbols.count)].filter {
-                seenSymbols.insert($0).inserted
-                    && symbolRecordsByMangledName[Self.normalizedSymbol($0)]?.mangledSymbols.contains($0) != true
-            }
-            let results = try await ParallelMap.map(inputs) { symbol in
-                Result { try Self.extract(symbol) }
-            }
-            for (symbol, result) in zip(inputs, results) {
-                try Task.checkCancellation()
-                switch result {
-                case .success(let extraction): _ = merge(extraction)
-                case .failure(let error): throw MergeError(mangledSymbol: symbol, underlyingError: error)
-                }
-            }
+        internal init(affectedDeclarationIDs: Set<SymbolDeclaration.ID>, diagnostics: [SymbolDiagnostic]) {
+            self.affectedDeclarationIDs = affectedDeclarationIDs
+            self.diagnostics = diagnostics
         }
     }
 }
 
 fileprivate extension SymbolIndexStore {
-    static func normalizedSymbol(_ mangledSymbol: String) -> String {
-        if ["_$s", "_$S", "_$e", "__T", "_async_Main"].contains(where: mangledSymbol.hasPrefix) {
-            return String(mangledSymbol.dropFirst())
-        }
-        return mangledSymbol
-    }
-
-    static func extract(_ mangledSymbol: String) throws -> SymbolExtractor.ExtractionResult {
-        let symbol = try SwiftSymbol(normalizedSymbol(mangledSymbol))
-        return try SymbolExtractor().extract(symbol, mangledSymbol: mangledSymbol)
-    }
-
-    mutating func merge(_ extraction: SymbolExtractor.ExtractionResult) -> MergeResult {
-        let mangledSymbol = extraction.record.mangledSymbol
-        let normalizedSymbol = Self.normalizedSymbol(mangledSymbol)
+    mutating func mergeDeclarations(_ contribution: SymbolIndexContribution) -> MergeResult {
         var affectedDeclarationIDs: Set<SymbolDeclaration.ID> = []
-        var incomingDiagnostics = extraction.diagnostics
+        var incomingDiagnostics = contribution.diagnostics
 
-        for declaration in extraction.declarations {
+        for declaration in contribution.declarations {
             var merged = declaration
             if let existing = declarationsByID[declaration.id] {
                 // Identity includes the signature, labels and context. Keep unexpected
@@ -160,7 +174,7 @@ fileprivate extension SymbolIndexStore {
             }
         }
 
-        for conformance in extraction.conformances {
+        for conformance in contribution.conformances {
             let identity = conformance.mergeIdentity
             if conformancesByIdentity[identity] != nil {
                 conformancesByIdentity[identity]?.mangledSymbols.formUnion(conformance.mangledSymbols)
@@ -168,7 +182,7 @@ fileprivate extension SymbolIndexStore {
                 conformancesByIdentity[identity] = conformance
             }
         }
-        for requirement in extraction.protocolRequirements {
+        for requirement in contribution.protocolRequirements {
             let identity = requirement.structuralIdentity
             if requirementsByIdentity[identity] != nil {
                 requirementsByIdentity[identity]?.mangledSymbols.formUnion(requirement.mangledSymbols)
@@ -177,7 +191,7 @@ fileprivate extension SymbolIndexStore {
             }
             affectedDeclarationIDs.insert(requirement.protocolID)
         }
-        for runtimeSymbol in extraction.runtimeSymbols {
+        for runtimeSymbol in contribution.runtimeSymbols {
             let identity = runtimeSymbol.structuralIdentity
             if runtimeSymbolsByIdentity[identity] != nil {
                 runtimeSymbolsByIdentity[identity]?.mangledSymbols.formUnion(runtimeSymbol.mangledSymbols)
@@ -187,16 +201,20 @@ fileprivate extension SymbolIndexStore {
             affectedDeclarationIDs.insert(runtimeSymbol.declarationID)
         }
 
-        var record = SymbolRecord(mangledSymbol: normalizedSymbol, demangledSymbol: extraction.record.demangledSymbol,
-                                  role: extraction.record.role, declarationIDs: extraction.record.declarationIDs)
-        record.mangledSymbols = (symbolRecordsByMangledName[normalizedSymbol]?.mangledSymbols ?? []).union([mangledSymbol])
-        symbolRecordsByMangledName[normalizedSymbol] = record
+        for incomingRecord in contribution.symbolRecords {
+            let normalizedSymbol = MangledSymbolSource.normalizedSymbol(incomingRecord.mangledSymbol)
+            var record = SymbolRecord(mangledSymbol: normalizedSymbol, demangledSymbol: incomingRecord.demangledSymbol,
+                                      role: incomingRecord.role, declarationIDs: incomingRecord.declarationIDs)
+            record.mangledSymbols = (symbolRecordsByMangledName[normalizedSymbol]?.mangledSymbols ?? [])
+                .union(incomingRecord.mangledSymbols)
+            symbolRecordsByMangledName[normalizedSymbol] = record
+        }
 
         var updatedDiagnostics: [SymbolDiagnostic] = []
         for diagnostic in incomingDiagnostics {
             let identity = DiagnosticIdentity(kind: diagnostic.kind, message: diagnostic.message,
                 declarationID: diagnostic.declarationID,
-                mangledSymbol: diagnostic.declarationID == nil ? normalizedSymbol : nil)
+                mangledSymbol: diagnostic.declarationID == nil ? diagnostic.mangledSymbols.sorted().first.map(MangledSymbolSource.normalizedSymbol) : nil)
             let merged = SymbolDiagnostic(
                 kind: diagnostic.kind, message: diagnostic.message,
                 mangledSymbols: diagnostic.mangledSymbols.union(diagnosticsByIdentity[identity]?.mangledSymbols ?? []),
