@@ -395,3 +395,66 @@ extension SwiftSymbol {
 	}
 }
 
+extension SwiftSymbol.Kind {
+    var isDeclName: Bool {
+        switch self {
+            case .identifier, .localDeclName, .privateDeclName, .relatedEntityDeclName: fallthrough
+            case .prefixOperator, .postfixOperator, .infixOperator: fallthrough
+            case .typeSymbolicReference, .protocolSymbolicReference, .objectiveCProtocolSymbolicReference: return true
+            default: return false
+        }
+    }
+    
+    var isContext: Bool {
+        switch self {
+            case .borrowAccessor, .mutateAccessor, .yieldingBorrowAccessor, .yieldingMutateAccessor, .propertyWrappedFieldInitAccessor: fallthrough
+            case .allocator, .anonymousContext, .autoDiffFunction, .class, .constructor, .curryThunk, .deallocator, .defaultArgumentInitializer: fallthrough
+            case .destructor, .didSet, .dispatchThunk, .enum, .explicitClosure, .extension, .function: fallthrough
+            case .getter, .globalGetter, .iVarInitializer, .iVarDestroyer, .implicitClosure: fallthrough
+            case .initializer, .initAccessor, .isolatedDeallocator, .materializeForSet, .modifyAccessor, .modify2Accessor: fallthrough
+            case .module, .nativeOwningAddressor: fallthrough
+            case .nativeOwningMutableAddressor, .nativePinningAddressor, .nativePinningMutableAddressor, .opaqueReturnTypeOf: fallthrough
+            case .otherNominalType, .owningAddressor, .owningMutableAddressor, .propertyWrapperBackingInitializer: fallthrough
+            case .propertyWrapperInitFromProjectedValue, .protocol, .protocolSymbolicReference, .readAccessor: fallthrough
+            case .read2Accessor, .setter, .static: fallthrough
+            case .structure, .subscript, .typeSymbolicReference, .typeAlias, .unsafeAddressor, .unsafeMutableAddressor: fallthrough
+            case .variable, .willSet, .builtinTupleType: return true
+            default: return false
+        }
+    }
+    
+    var isAnyGeneric: Bool {
+        switch self {
+            case .structure, .class, .enum, .protocol, .protocolSymbolicReference, .otherNominalType, .typeAlias, .typeSymbolicReference, .objectiveCProtocolSymbolicReference, .builtinTupleType: return true
+            default: return false
+        }
+    }
+    
+    var isEntity: Bool {
+        return self == .type || isContext
+    }
+    
+    var isRequirement: Bool {
+        switch self {
+            case .dependentGenericParamPackMarker, .dependentGenericParamValueMarker, .dependentGenericSameTypeRequirement, .dependentGenericSameShapeRequirement: fallthrough
+            case .dependentGenericLayoutRequirement, .dependentGenericConformanceRequirement, .dependentGenericInverseConformanceRequirement: return true
+            default: return false
+        }
+    }
+    
+    var isFunctionAttr: Bool {
+        switch self {
+            case .functionSignatureSpecialization, .genericSpecialization, .genericSpecializationPrespecialized, .inlinedGenericFunction: fallthrough
+            case .genericSpecializationNotReAbstracted, .genericPartialSpecialization: fallthrough
+            case .genericPartialSpecializationNotReAbstracted, .genericSpecializationInResilienceDomain, .objCAttribute, .nonObjCAttribute: fallthrough
+            case .dynamicAttribute, .directMethodReferenceAttribute, .vTableAttribute, .partialApplyForwarder: fallthrough
+            case .partialApplyObjCForwarder, .outlinedVariable, .outlinedReadOnlyObject, .outlinedBridgedMethod, .mergedFunction: fallthrough
+            case .distributedThunk, .distributedAccessor: fallthrough
+            case .dynamicallyReplaceableFunctionImpl, .dynamicallyReplaceableFunctionKey, .dynamicallyReplaceableFunctionVar: fallthrough
+            case .asyncFunctionPointer, .asyncAwaitResumePartialFunction, .asyncSuspendResumePartialFunction: fallthrough
+            case .accessibleFunctionRecord, .backDeploymentThunk, .backDeploymentFallback, .coroFunctionPointer, .defaultOverride: fallthrough
+            case .hasSymbolQuery: return true
+            default: return false
+        }
+    }
+}

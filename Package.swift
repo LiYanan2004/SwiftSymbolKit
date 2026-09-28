@@ -42,6 +42,7 @@ let package = Package(
             name: "SwiftSymbolIndexStore",
             dependencies: [
                 "SwiftIndexing",
+                "SwiftDemangle",
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "SwiftBasicFormat", package: "swift-syntax"),

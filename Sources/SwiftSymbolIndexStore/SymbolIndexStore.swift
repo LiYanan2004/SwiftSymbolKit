@@ -1,3 +1,4 @@
+import SwiftDemangle
 import SwiftIndexing
 
 /// Indexes declarations, relationships and evidence contributed by multiple sources.
@@ -209,11 +210,7 @@ fileprivate extension SymbolIndexStore {
     }
 
     func opaqueOrdinals(in node: DemangledNode) -> Set<Int> {
-        if node.kind == .opaqueReturnType {
-            if let child = node.children.first, case .index(let index) = child.contents,
-               let value = Int(exactly: index), value < Int.max { return [value + 1] }
-            return [0]
-        }
+        if let ordinal = node.opaqueReturnTypeOrdinal { return [ordinal] }
         return Set(node.children.flatMap { opaqueOrdinals(in: $0) })
     }
 

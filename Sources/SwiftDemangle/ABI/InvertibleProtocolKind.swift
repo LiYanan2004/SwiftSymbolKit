@@ -10,11 +10,11 @@
 public enum InvertibleProtocolKind: UInt64, Sendable {
     case copyable = 0
     case escapable = 1
-
+    
     public var sourceName: String {
         switch self {
-        case .copyable: "Copyable"
-        case .escapable: "Escapable"
+            case .copyable: "Copyable"
+            case .escapable: "Escapable"
         }
     }
 }

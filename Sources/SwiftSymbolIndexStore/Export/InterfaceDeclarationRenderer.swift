@@ -1,3 +1,4 @@
+import SwiftDemangle
 import SwiftIndexing
 import Foundation
 import SwiftSyntax
@@ -202,10 +203,7 @@ fileprivate extension InterfaceDeclarationRenderer {
     }
 
     func containsUnresolvedOpaqueReturnType(_ node: DemangledNode, types: InterfaceTypeRenderer) -> Bool {
-        if node.kind == .opaqueReturnType {
-            var ordinal = 0
-            if let child = node.children.first, case .index(let index) = child.contents,
-               let value = Int(exactly: index), value < Int.max { ordinal = value + 1 }
+        if let ordinal = node.opaqueReturnTypeOrdinal {
             guard let recovered = types.opaqueReturnTypes[ordinal] else { return true }
             return recovered.constraints.isEmpty || !recovered.sameTypeRequirements.isEmpty
         }

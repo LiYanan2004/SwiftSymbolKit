@@ -173,12 +173,10 @@ fileprivate extension OpaqueTypeDescriptorReader {
     }
     
     func opaqueOrdinals(in node: DemangledNode) -> Set<Int> {
-        if node.kind == .opaqueReturnType {
+        if let ordinal = node.opaqueReturnTypeOrdinal {
             // Qr denotes ordinal 0; QR INDEX denotes INDEX + 1.
             // https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/docs/ABI/Mangling.rst
-            if let child = node.children.first, case .index(let index) = child.contents,
-               let ordinal = Int(exactly: index), ordinal < Int.max { return [ordinal + 1] }
-            return [0]
+            return [ordinal]
         }
         // Inspect the declaration's type, excluding opaque types in its context.
         return Set(node.children.filter { node.kind == .type || $0.kind == .type || node.kind != .function && node.kind != .variable && node.kind != .subscript }
@@ -187,10 +185,9 @@ fileprivate extension OpaqueTypeDescriptorReader {
     
     func rootParameter(_ node: DemangledNode, depth: Int) -> Int? {
         if node.kind == .type, node.children.count == 1 { return rootParameter(node.children[0], depth: depth) }
-        guard node.kind == .dependentGenericParamType, node.children.count == 2,
-              case .index(let parameterDepth) = node.children[0].contents, parameterDepth == UInt64(depth),
-              case .index(let index) = node.children[1].contents else { return nil }
-        return Int(exactly: index)
+        guard let parameterPosition = node.genericParameterPosition,
+              parameterPosition.depth == UInt64(depth) else { return nil }
+        return Int(exactly: parameterPosition.index)
     }
     
     func parameters(in node: DemangledNode, atDepth depth: Int) -> Set<Int> {

@@ -1,3 +1,4 @@
+import SwiftDemangle
 import SwiftIndexing
 import SwiftParser
 import SwiftSyntax
@@ -21,16 +22,6 @@ struct InterfaceTypeRenderer: Sendable {
             throw RenderingError("Unsupported identifier: \(name)")
         }
         return .identifier(escapedName)
-    }
-
-    static func parameterName(depth: Int, index: Int) -> String {
-        var remaining = index
-        var name = ""
-        repeat {
-            name = String(UnicodeScalar(65 + remaining % 26)!) + name
-            remaining = remaining / 26 - 1
-        } while remaining >= 0
-        return name + (depth == 0 ? "" : String(depth))
     }
 
     func type(_ node: DemangledNode) throws -> TypeSyntax {
@@ -123,11 +114,8 @@ struct InterfaceTypeRenderer: Sendable {
         case .isolated: return try specifiedType(.isolated, type(node.onlyChild()))
         case .compileTimeLiteral: return try specifiedType(._const, type(node.onlyChild()))
         case .opaqueReturnType:
-            let ordinal: Int
-            if let child = node.children.first, case .index(let index) = child.contents,
-               let value = Int(exactly: index), value < Int.max { ordinal = value + 1 }
-            else { ordinal = 0 }
-            if let recovered = opaqueReturnTypes[ordinal], !recovered.constraints.isEmpty,
+            if let ordinal = node.opaqueReturnTypeOrdinal,
+               let recovered = opaqueReturnTypes[ordinal], !recovered.constraints.isEmpty,
                recovered.sameTypeRequirements.isEmpty {
                 return try TypeSyntax(SomeOrAnyTypeSyntax(someOrAnySpecifier: .keyword(.some),
                     constraint: composition(recovered.constraints.map(type))))
@@ -280,7 +268,7 @@ struct InterfaceTypeRenderer: Sendable {
                 continue
             }
             let parameters = (0..<count).map { index in
-                var name = Self.parameterName(depth: parameterDepth, index: index)
+                var name = genericParameterName(depth: UInt64(parameterDepth), index: UInt64(index))
                 while reserved.contains(name) { name += "_" }
                 reserved.insert(name)
                 introduced.append((parameterDepth, index, name))
@@ -463,9 +451,10 @@ extension DemangledNode {
     }
 
     func parameterPosition() throws -> (Int, Int) {
-        guard kind == .dependentGenericParamType, children.count == 2 else {
+        guard let position = genericParameterPosition,
+              position.depth <= 128, position.index <= 128 else {
             throw InterfaceTypeRenderer.RenderingError("Invalid generic parameter")
         }
-        return try (children[0].smallIndex(), children[1].smallIndex())
+        return (Int(position.depth), Int(position.index))
     }
 }
