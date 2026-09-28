@@ -21,13 +21,13 @@ struct OpaqueRecoveryTests {
         let context = IndexingContext(moduleName: "OpaqueFixtures", targets: [target])
         let source = LoadedImageSource(imagePath: library.path,
             descriptorSymbols: symbols.filter { $0.hasSuffix("QOMQ") }, context: context)
-        let contribution = try await source.read()
-        #expect(contribution.exportedSymbols.isEmpty)
-        #expect(!contribution.diagnostics.contains { $0.severity == .warning }, "\(contribution.diagnostics.map(\.message))")
+        let indexingResult = try await source.read()
+        #expect(indexingResult.exportedSymbols.isEmpty)
+        #expect(!indexingResult.diagnostics.contains { $0.severity == .warning }, "\(indexingResult.diagnostics.map(\.message))")
         var index = SymbolIndexStore()
         try await index.ingest(MangledSymbolSource(exportedSymbols: symbols, context: context))
         let originalExports = index.exportedSymbols
-        try index.merge(contribution)
+        try index.merge(indexingResult)
         #expect(index.exportedSymbols == originalExports)
         let writer = SwiftInterfaceWriter(configuration: .init(moduleName: "OpaqueFixtures", compilerVersion: "test"))
         let output = try await writer.write(index)
@@ -48,7 +48,7 @@ struct OpaqueRecoveryTests {
         }
         // Repeated ingestion is idempotent; metadata does not grant exports.
         let evidenceCount = index.evidence.count
-        try index.merge(contribution)
+        try index.merge(indexingResult)
         #expect(index.evidence.count == evidenceCount)
         #expect(try await writer.write(index).text == output.text)
 
@@ -66,7 +66,7 @@ struct OpaqueRecoveryTests {
             context: .init(moduleName: context.moduleName, targets: [target, otherTarget]),
             descriptorSymbolTargets: coverage).read()
         #expect(automatic.context.targets == [target])
-        #expect(automatic.observations.count == contribution.observations.count)
+        #expect(automatic.observations.count == indexingResult.observations.count)
         #expect(!automatic.diagnostics.contains { $0.mangledSymbols.contains(foreignDescriptor) })
         await #expect(throws: (any Error).self) {
             try await LoadedImageSource(imagePath: library.path, descriptorSymbols: source.descriptorSymbols,
@@ -79,7 +79,7 @@ struct OpaqueRecoveryTests {
         #expect(mismatched.diagnostics.count == source.descriptorSymbols.count)
 
         let simple = try #require(index.declarationsByID.values.first { $0.name == "simple" })
-        let observation = try #require(contribution.observations.first {
+        let observation = try #require(indexingResult.observations.first {
             if case .mangledSymbol(let name) = $0.subject { return name.contains("6simple") }
             return false
         })
@@ -97,7 +97,7 @@ struct OpaqueRecoveryTests {
         var reversed = SymbolIndexStore()
         try await reversed.ingest(MangledSymbolSource(exportedSymbols: symbols, context: context))
         try reversed.merge(conflict)
-        try reversed.merge(contribution)
+        try reversed.merge(indexingResult)
         #expect(try await writer.write(reversed).text == conflictedText)
     }
 

@@ -1,7 +1,7 @@
 import SwiftDemangle
 import SwiftIndexing
 
-/// Indexes declarations, relationships and evidence contributed by multiple sources.
+/// Indexes declarations, relationships and evidence read from multiple sources.
 ///
 /// The caller owns synchronization when sharing a store across concurrent work.
 public struct SymbolIndexStore: Sendable {
@@ -58,7 +58,7 @@ public struct SymbolIndexStore: Sendable {
     public private(set) var exportAssessmentsByDeclarationID: [SymbolDeclaration.ID: SymbolExportAssessment] = [:]
     public private(set) var reconciliationIssues: [SymbolIndexIssue] = []
 
-    /// The first primary contribution establishes the context.
+    /// The first primary indexing result establishes the context.
     public init() {}
 
     public enum IngestionError: Error {
@@ -214,11 +214,11 @@ fileprivate extension SymbolIndexStore {
         return Set(node.children.flatMap { opaqueOrdinals(in: $0) })
     }
 
-    mutating func mergeDeclarations(_ contribution: IndexingResult) -> MergeResult {
+    mutating func mergeDeclarations(_ indexingResult: IndexingResult) -> MergeResult {
         var affectedDeclarationIDs: Set<SymbolDeclaration.ID> = []
-        var incomingDiagnostics = contribution.diagnostics
+        var incomingDiagnostics = indexingResult.diagnostics
 
-        for declaration in contribution.declarations {
+        for declaration in indexingResult.declarations {
             var merged = declaration
             if let existing = declarationsByID[declaration.id] {
                 // Identity includes the signature, labels and context. Keep unexpected
@@ -254,7 +254,7 @@ fileprivate extension SymbolIndexStore {
             }
         }
 
-        for conformance in contribution.conformances {
+        for conformance in indexingResult.conformances {
             let identity = conformance.mergeIdentity
             if conformancesByIdentity[identity] != nil {
                 conformancesByIdentity[identity]?.mangledSymbols.formUnion(conformance.mangledSymbols)
@@ -262,7 +262,7 @@ fileprivate extension SymbolIndexStore {
                 conformancesByIdentity[identity] = conformance
             }
         }
-        for requirement in contribution.protocolRequirements {
+        for requirement in indexingResult.protocolRequirements {
             let identity = requirement.structuralIdentity
             if requirementsByIdentity[identity] != nil {
                 requirementsByIdentity[identity]?.mangledSymbols.formUnion(requirement.mangledSymbols)
@@ -271,7 +271,7 @@ fileprivate extension SymbolIndexStore {
             }
             affectedDeclarationIDs.insert(requirement.protocolID)
         }
-        for runtimeSymbol in contribution.runtimeSymbols {
+        for runtimeSymbol in indexingResult.runtimeSymbols {
             let identity = runtimeSymbol.structuralIdentity
             if runtimeSymbolsByIdentity[identity] != nil {
                 runtimeSymbolsByIdentity[identity]?.mangledSymbols.formUnion(runtimeSymbol.mangledSymbols)
@@ -281,7 +281,7 @@ fileprivate extension SymbolIndexStore {
             affectedDeclarationIDs.insert(runtimeSymbol.declarationID)
         }
 
-        for incomingRecord in contribution.symbolRecords {
+        for incomingRecord in indexingResult.symbolRecords {
             let normalizedSymbol = MangledSymbolSource.normalizedSymbol(incomingRecord.mangledSymbol)
             var record = SymbolRecord(mangledSymbol: normalizedSymbol, demangledSymbol: incomingRecord.demangledSymbol,
                                       role: incomingRecord.role, declarationIDs: incomingRecord.declarationIDs)

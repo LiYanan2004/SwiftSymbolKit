@@ -34,16 +34,16 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
         }
         let moduleName = inputURL.deletingPathExtension().lastPathComponent
         let descriptors = stub.swiftSymbolTargets.filter { $0.key.hasSuffix("QOMQ") }
-        let opaqueContribution: IndexingResult?
+        let opaqueIndexingResult: IndexingResult?
         if parseOpaqueReturnType, !descriptors.isEmpty {
-            opaqueContribution = try await LoadedImageSource(
+            opaqueIndexingResult = try await LoadedImageSource(
                 imagePath: imagePath.map(\.expandingTildeInPath) ?? stub.installName,
                 descriptorSymbols: Array(descriptors.keys),
                 context: .init(moduleName: moduleName, targets: stub.targets),
                 descriptorSymbolTargets: descriptors
             ).read()
-        } else { opaqueContribution = nil }
-        let selectedTargets = opaqueContribution?.context.targets ?? stub.targets
+        } else { opaqueIndexingResult = nil }
+        let selectedTargets = opaqueIndexingResult?.context.targets ?? stub.targets
         let symbolTargets = stub.swiftSymbolTargets.compactMapValues { targets -> Set<IndexingTarget>? in
             let coverage = targets.intersection(selectedTargets)
             return coverage.isEmpty ? nil : coverage
@@ -63,8 +63,8 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
             location: inputURL.absoluteString,
             into: &store
         )
-        if let opaqueContribution {
-            try store.merge(opaqueContribution)
+        if let opaqueIndexingResult {
+            try store.merge(opaqueIndexingResult)
         }
         
         let writer = SwiftInterfaceWriter(configuration: .init(moduleName: context.moduleName))
@@ -113,8 +113,8 @@ fileprivate extension SwiftInterfaceCommand {
             for (mangledSymbol, result) in zip(inputs, results) {
                 try Task.checkCancellation()
                 switch result {
-                    case .success(let contribution):
-                        _ = try symbolIndexStore.merge(contribution)
+                    case .success(let indexingResult):
+                        _ = try symbolIndexStore.merge(indexingResult)
                     case .failure(let error):
                         Loggers.symbolExtraction.error(
                             "Failed to parse symbol: \(String(describing: error), privacy: .public). Symbol: \(mangledSymbol, privacy: .public)"

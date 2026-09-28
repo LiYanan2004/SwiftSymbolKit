@@ -45,7 +45,7 @@ extension SymbolIndexStore {
             for (symbol, result) in zip(inputs, results) {
                 try Task.checkCancellation()
                 switch result {
-                case .success(let contribution): _ = try merge(contribution)
+                case .success(let indexingResult): _ = try merge(indexingResult)
                 case .failure(let error): throw MergeError(mangledSymbol: symbol, underlyingError: error)
                 }
             }

@@ -1,5 +1,5 @@
-/// Adapters read their own artifact metadata before returning normalized input.
-/// The index validates the returned context before applying any contribution.
+/// Adapters read their own artifact metadata and return normalized indexing results.
+/// The index validates each result's context before merging it.
 public protocol IndexingSource: Sendable {
     func read() async throws -> IndexingResult
 }

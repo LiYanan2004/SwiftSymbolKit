@@ -6,7 +6,7 @@ struct SymbolSourceTests {
     private static let context = IndexingContext(moduleName: "Example", targets: [.init(architecture: .arm64, platform: .macOS)])
     private static let symbols = ["_$s7Example3FooVMn", "$s7Example3FooV8computedSivg"]
 
-    @Test func parsedContributionAndConvenienceInputProduceTheSameInterface() async throws {
+    @Test func parsedIndexingResultAndConvenienceInputProduceTheSameInterface() async throws {
         var expectedIndex = SymbolIndexStore()
         try await expectedIndex.merge(contentsOf: Self.symbols)
         let source = MangledSymbolSource(exportedSymbols: Self.symbols, context: Self.context)
@@ -31,7 +31,7 @@ struct SymbolSourceTests {
         #expect(output.text.contains("var computed: Swift.Int"))
     }
 
-    @Test func sourcePreservesContextAndProvenanceWhenBuildingContribution() async throws {
+    @Test func sourcePreservesContextAndProvenanceInIndexingResult() async throws {
         let context = IndexingContext(
             moduleName: "Example",
             targets: [.init(architecture: .arm64, platform: .macOS)],
@@ -40,12 +40,12 @@ struct SymbolSourceTests {
         let provenance = SymbolEvidenceSource(kind: .mangledSymbols, location: "Example.tbd",
             artifactIdentifier: "tbd-digest", lineageIdentifier: "sdk-a-Example")
         let source = MangledSymbolSource(exportedSymbols: Self.symbols, context: context, source: provenance)
-        let contribution = try await source.read()
-        #expect(contribution.context == context)
-        #expect(contribution.source == provenance)
-        #expect(Set(contribution.symbolRecords.map(\.mangledSymbol)) == Set(Self.symbols))
+        let indexingResult = try await source.read()
+        #expect(indexingResult.context == context)
+        #expect(indexingResult.source == provenance)
+        #expect(Set(indexingResult.symbolRecords.map(\.mangledSymbol)) == Set(Self.symbols))
         var index = SymbolIndexStore()
-        try index.merge(contribution)
+        try index.merge(indexingResult)
         #expect(index.sources == [provenance])
         #expect(index.declarationsByID.keys.allSatisfy { index.sourcesByDeclarationID[$0] == [provenance] })
     }
