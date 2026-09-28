@@ -84,7 +84,7 @@ extension SwiftSymbol: CustomStringConvertible {
 	}
 }
 
-private extension SwiftSymbol {
+fileprivate extension SwiftSymbol {
 	static func classificationPrefix(for mangledName: String, symbol: SwiftSymbol?) -> String {
 		var classifications: [String] = []
 		if !mangledName.hasPrefix("async_Main") && !mangledName.hasPrefix("_async_Main") && !mangledName.hasPrefix("_T") && getManglingPrefixLength(mangledName.unicodeScalars) == 0 {

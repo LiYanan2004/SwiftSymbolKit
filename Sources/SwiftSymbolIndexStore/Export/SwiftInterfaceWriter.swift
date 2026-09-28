@@ -27,11 +27,11 @@ public struct SwiftInterfaceWriter {
 
         /// Module name recorded in the header; all declarations in the index are rendered.
         public var moduleName: String
-        public var header: Header
+        public var header: Header?
         /// Explicit imports; references in mangled signatures do not identify reexports.
         public var imports: [String]
 
-        public init(moduleName: String, header: Header, imports: [String] = []) {
+        public init(moduleName: String, header: Header? = nil, imports: [String] = []) {
             self.moduleName = moduleName
             self.header = header
             self.imports = imports
@@ -97,7 +97,8 @@ public struct SwiftInterfaceWriter {
                 importDeclaration.with(\.leadingTrivia, .newline)
             }
             for (position, declaration) in declarations.enumerated() {
-                CodeBlockItemSyntax(leadingTrivia: .newlines(imports.isEmpty && position == 0 ? 1 : 2),
+                CodeBlockItemSyntax(leadingTrivia: .newlines(imports.isEmpty && position == 0
+                    ? (configuration.header == nil ? 0 : 1) : 2),
                     item: .decl(declaration))
             }
         }
@@ -121,7 +122,7 @@ fileprivate extension SwiftInterfaceWriter {
         guard (try? InterfaceTypeRenderer.identifier(configuration.moduleName)) != nil else {
             throw ConfigurationError.invalidValue("moduleName")
         }
-        let header = configuration.header
+        guard let header = configuration.header else { return [] }
         for (name, value) in [("compilerVersion", header.compilerVersion),
                               ("interfaceFormatVersion", header.interfaceFormatVersion)] {
             guard !value.isEmpty, !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {

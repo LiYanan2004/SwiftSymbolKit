@@ -34,7 +34,6 @@ let package = Package(
                 .product(name: "Yams", package: "Yams"),
             ]
         ),
-        .testTarget(name: "SwiftSymbolCLITests", dependencies: ["SwiftSymbolCLI"]),
         .target(
             name: "SwiftDemangle",
             path: "Sources/SwiftDemangle"
