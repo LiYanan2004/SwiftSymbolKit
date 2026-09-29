@@ -36,7 +36,7 @@ public struct SymbolIndexStore: Sendable {
     private var runtimeSymbolsByIdentity: [[String]: RuntimeSymbolRecord] = [:]
     private var diagnosticsByIdentity: [DiagnosticIdentity: SymbolDiagnostic] = [:]
     private var conflictingDeclarationIDs: Set<SymbolDeclaration.ID> = []
-
+    
     private struct DiagnosticIdentity: Hashable, Sendable {
         let kind: SymbolDiagnostic.Kind
         let message: String
@@ -45,7 +45,13 @@ public struct SymbolIndexStore: Sendable {
     }
     private var membersByID: [SymbolDeclaration.ID: Set<SymbolDeclaration.ID>] = [:]
     private var opaqueEvidenceByDeclarationID: [SymbolDeclaration.ID: [Int: [SymbolEvidence]]] = [:]
-
+    
+    /// Resolution status and all verified candidates for each original Clang ABI identity.
+    public private(set) var clangTypeNamesByClangIdentity: [ClangTypeIdentity: ClangTypeNameResolution] = [:]
+    /// Reverse lookup includes verified aliases, including candidates in ambiguous resolutions.
+    public private(set) var clangTypeIdentitiesBySwiftName: [SwiftTypeName: Set<ClangTypeIdentity>] = [:]
+    private var clangTypeNameProducer: String?
+    
     public private(set) var context: IndexingContext?
     public private(set) var primarySource: SymbolEvidenceSource?
     public private(set) var sources: Set<SymbolEvidenceSource> = []
@@ -57,10 +63,10 @@ public struct SymbolIndexStore: Sendable {
     public private(set) var resolvedFactsBySubject: [SymbolResolvedSubject: [SymbolSupplementalFact.Resolved]] = [:]
     public private(set) var exportAssessmentsByDeclarationID: [SymbolDeclaration.ID: SymbolExportAssessment] = [:]
     public private(set) var reconciliationIssues: [SymbolIndexIssue] = []
-
+    
     /// The first primary indexing result establishes the context.
     public init() {}
-
+    
     public enum IngestionError: Error {
         case incompatibleContext
         case primarySourceRequired
@@ -69,7 +75,7 @@ public struct SymbolIndexStore: Sendable {
         case invalidExportEvidence
         case unsupportedSupplementalFact
     }
-
+    
     /// The single mutation boundary for parsed input. Matching, reconciliation and
     /// export eligibility belong to the index; source adapters only produce facts.
     @discardableResult
@@ -89,14 +95,17 @@ public struct SymbolIndexStore: Sendable {
         } else if primarySource == nil {
             throw IngestionError.primarySourceRequired
         }
-
+        
+        if result.source.kind == .compilerDump {
+            return try mergeClangTypeNames(result)
+        }
         if result.source.kind == .loadedImage {
             return try mergeOpaqueReturnTypes(result)
         }
         guard result.source.kind == .mangledSymbols, result.evidence.isEmpty else {
             throw IngestionError.unsupportedSupplementalFact
         }
-
+        
         let recordSymbols = Set(result.symbolRecords.map { MangledSymbolSource.normalizedSymbol($0.mangledSymbol) })
         let incomingExports = Set(result.exportedSymbols.map(MangledSymbolSource.normalizedSymbol))
         let supportedDeclarationIDs = Set(result.symbolRecords.flatMap(\.declarationIDs))
@@ -106,7 +115,7 @@ public struct SymbolIndexStore: Sendable {
               Set(result.declarations.map(\.id)).isSubset(of: supportedDeclarationIDs) else {
             throw IngestionError.invalidExportEvidence
         }
-
+        
         let mergeResult = mergeDeclarations(result)
         context = result.context
         primarySource = result.source
@@ -120,7 +129,7 @@ public struct SymbolIndexStore: Sendable {
         }
         return mergeResult
     }
-
+    
     public func declarations(inModule moduleName: String) -> [SymbolDeclaration] {
         declarationsByID.values
             .filter {
@@ -135,13 +144,13 @@ public struct SymbolIndexStore: Sendable {
             .compactMap { declarationsByID[$0] }
             .sorted { $0.id.structuralKey < $1.id.structuralKey }
     }
-
+    
     public struct MergeResult {
         /// Declarations whose facts or source spellings changed, including ancestors.
         public let affectedDeclarationIDs: Set<SymbolDeclaration.ID>
         /// Diagnostics introduced or updated by this merge.
         public let diagnostics: [SymbolDiagnostic]
-
+        
         internal init(affectedDeclarationIDs: Set<SymbolDeclaration.ID>, diagnostics: [SymbolDiagnostic]) {
             self.affectedDeclarationIDs = affectedDeclarationIDs
             self.diagnostics = diagnostics
@@ -150,6 +159,47 @@ public struct SymbolIndexStore: Sendable {
 }
 
 fileprivate extension SymbolIndexStore {
+    mutating func mergeClangTypeNames(_ result: IndexingResult) throws -> MergeResult {
+        // A name verified for one compiler target cannot be applied to other targets.
+        guard result.context.targets == context?.targets, result.context.targets.count == 1,
+              let producer = result.source.producer,
+              clangTypeNameProducer == nil || clangTypeNameProducer == producer else {
+            throw IngestionError.incompatibleContext
+        }
+        guard result.declarations.isEmpty, result.symbolRecords.isEmpty,
+              result.conformances.isEmpty, result.protocolRequirements.isEmpty,
+              result.runtimeSymbols.isEmpty, result.exportedSymbols.isEmpty,
+              result.exportedSymbolTargets.isEmpty else { throw IngestionError.invalidExportEvidence }
+        guard result.evidence.allSatisfy({ observation in
+            guard case .module(let module) = observation.subject, module == result.context.moduleName,
+                  case .clangTypeName(let resolution) = observation.fact else { return false }
+            return resolution.candidates.allSatisfy {
+                $0.identity == resolution.identity && ClangTypeIdentity.probeIdentity(mangledSymbol: $0.probeSymbol) == resolution.identity
+            }
+        }) else { throw IngestionError.unsupportedSupplementalFact }
+        var diagnostics = result.diagnostics
+        for observation in result.evidence {
+            guard case .clangTypeName(let incoming) = observation.fact else { continue }
+            let existing = clangTypeNamesByClangIdentity[incoming.identity]?.candidates ?? []
+            let resolution = ClangTypeNameResolution(identity: incoming.identity, candidates: existing + incoming.candidates)
+            clangTypeNamesByClangIdentity[incoming.identity] = resolution
+            for candidate in incoming.candidates {
+                clangTypeIdentitiesBySwiftName[candidate.swiftName, default: []].insert(incoming.identity)
+            }
+            if resolution.status == .ambiguous {
+                diagnostics.append(.init(kind: .conflictingInformation,
+                                         message: "Ambiguous Swift names for Clang type \(incoming.identity.kind.rawValue):\(incoming.identity.name)",
+                                         mangledSymbols: Set(resolution.candidates.map(\.probeSymbol)), declarationID: nil))
+            }
+            if !evidence.contains(where: { $0.source == observation.source && $0.fact == observation.fact }) {
+                evidence.append(observation)
+            }
+        }
+        clangTypeNameProducer = producer
+        sources.insert(result.source)
+        return mergeDeclarations(.init(source: result.source, context: result.context, diagnostics: diagnostics))
+    }
+    
     mutating func mergeOpaqueReturnTypes(_ result: IndexingResult) throws -> MergeResult {
         // The writer currently emits one interface without target conditionals.
         // Never apply a host observation to other targets in a multi-target TBD.
@@ -177,14 +227,14 @@ fileprivate extension SymbolIndexStore {
                   candidates.count == 1,
                   let declarationID = candidates.first, recovered.parameterDepth >= 0 else {
                 diagnostics.append(.init(kind: .incompleteDeclaration,
-                    message: "Opaque observation does not match one exported declaration and result ordinal.",
-                    mangledSymbols: [symbol], declarationID: nil, severity: .warning))
+                                         message: "Opaque observation does not match one exported declaration and result ordinal.",
+                                         mangledSymbols: [symbol], declarationID: nil, severity: .warning))
                 continue
             }
             var related = opaqueEvidenceByDeclarationID[declarationID]?[recovered.ordinal] ?? []
             if !related.contains(where: {
                 $0.source == incoming.source && $0.location == incoming.location
-                    && $0.fact == incoming.fact
+                && $0.fact == incoming.fact
             }) {
                 related.append(incoming)
                 evidence.append(incoming)
@@ -198,11 +248,11 @@ fileprivate extension SymbolIndexStore {
             if related.allSatisfy({ $0.fact == incoming.fact }) {
                 let confidence: SymbolSupplementalFactConfidence = Set(related.map { $0.source.lineageIdentifier }).count > 1 ? .corroborated : .singleSource
                 resolvedFactsBySubject[subject, default: []].append(.init(subject: subject, fact: incoming.fact,
-                    confidence: confidence, evidence: related))
+                                                                          confidence: confidence, evidence: related))
             } else {
                 diagnostics.append(.init(kind: .conflictingInformation,
-                    message: "Conflicting opaque return type observations; the constraint remains unresolved.",
-                    mangledSymbols: [symbol], declarationID: declarationID))
+                                         message: "Conflicting opaque return type observations; the constraint remains unresolved.",
+                                         mangledSymbols: [symbol], declarationID: declarationID))
             }
             affected.insert(declarationID)
             sourcesByDeclarationID[declarationID, default: []].insert(result.source)
@@ -211,16 +261,16 @@ fileprivate extension SymbolIndexStore {
         let merged = mergeDeclarations(.init(source: result.source, context: result.context, diagnostics: diagnostics))
         return .init(affectedDeclarationIDs: affected, diagnostics: merged.diagnostics)
     }
-
+    
     func opaqueOrdinals(in node: DemangledNode) -> Set<Int> {
         if let ordinal = node.opaqueReturnTypeOrdinal { return [ordinal] }
         return Set(node.children.flatMap { opaqueOrdinals(in: $0) })
     }
-
+    
     mutating func mergeDeclarations(_ indexingResult: IndexingResult) -> MergeResult {
         var affectedDeclarationIDs: Set<SymbolDeclaration.ID> = []
         var incomingDiagnostics = indexingResult.diagnostics
-
+        
         for declaration in indexingResult.declarations {
             var merged = declaration
             if let existing = declarationsByID[declaration.id] {
@@ -249,14 +299,14 @@ fileprivate extension SymbolIndexStore {
             declarationsByID[declaration.id] = merged
             affectedDeclarationIDs.insert(declaration.id)
             switch declaration.context {
-            case .module: break
-            case .declaration(let parentID):
-                membersByID[parentID, default: []].insert(declaration.id)
-            case .typeExtension(let context):
-                membersByID[context.extendedType, default: []].insert(declaration.id)
+                case .module: break
+                case .declaration(let parentID):
+                    membersByID[parentID, default: []].insert(declaration.id)
+                case .typeExtension(let context):
+                    membersByID[context.extendedType, default: []].insert(declaration.id)
             }
         }
-
+        
         for conformance in indexingResult.conformances {
             let identity = conformance.mergeIdentity
             if conformancesByIdentity[identity] != nil {
@@ -283,7 +333,7 @@ fileprivate extension SymbolIndexStore {
             }
             affectedDeclarationIDs.insert(runtimeSymbol.declarationID)
         }
-
+        
         for incomingRecord in indexingResult.symbolRecords {
             let normalizedSymbol = MangledSymbolSource.normalizedSymbol(incomingRecord.mangledSymbol)
             var record = SymbolRecord(mangledSymbol: normalizedSymbol, demangledSymbol: incomingRecord.demangledSymbol,
@@ -292,12 +342,12 @@ fileprivate extension SymbolIndexStore {
                 .union(incomingRecord.mangledSymbols)
             symbolRecordsByMangledName[normalizedSymbol] = record
         }
-
+        
         var updatedDiagnostics: [SymbolDiagnostic] = []
         for diagnostic in incomingDiagnostics {
             let identity = DiagnosticIdentity(kind: diagnostic.kind, message: diagnostic.message,
-                declarationID: diagnostic.declarationID,
-                mangledSymbol: diagnostic.declarationID == nil ? diagnostic.mangledSymbols.sorted().first.map(MangledSymbolSource.normalizedSymbol) : nil)
+                                              declarationID: diagnostic.declarationID,
+                                              mangledSymbol: diagnostic.declarationID == nil ? diagnostic.mangledSymbols.sorted().first.map(MangledSymbolSource.normalizedSymbol) : nil)
             let merged = SymbolDiagnostic(
                 kind: diagnostic.kind, message: diagnostic.message,
                 mangledSymbols: diagnostic.mangledSymbols.union(diagnosticsByIdentity[identity]?.mangledSymbols ?? []),
@@ -318,16 +368,16 @@ fileprivate extension SymbolDeclaration {
     var mergeFacts: [String] {
         let contextFields: [String]
         switch context {
-        case .module(let name): contextFields = ["module", name]
-        case .declaration(let identifier): contextFields = ["declaration", identifier.structuralKey]
-        case .typeExtension(let context):
-            contextFields = ["extension", context.moduleName, context.extendedType.structuralKey,
-                             context.genericSignature?.declarationKey ?? ""]
+            case .module(let name): contextFields = ["module", name]
+            case .declaration(let identifier): contextFields = ["declaration", identifier.structuralKey]
+            case .typeExtension(let context):
+                contextFields = ["extension", context.moduleName, context.extendedType.structuralKey,
+                                 context.genericSignature?.declarationKey ?? ""]
         }
         return [String(describing: kind), name, nameNode?.declarationKey ?? "", String(isStatic),
                 signature?.declarationKey ?? "", genericSignature?.declarationKey ?? "",
                 parameterLabels == nil ? "unknown labels" : "labels"]
-            + (parameterLabels ?? []) + contextFields
+        + (parameterLabels ?? []) + contextFields
     }
 }
 

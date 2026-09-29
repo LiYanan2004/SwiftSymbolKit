@@ -6,14 +6,14 @@ public enum SymbolSupplementalFact: Equatable, Sendable {
         case expressionUnavailable
         case absent
     }
-
+    
     public enum ImportKind: Equatable, Sendable {
         case explicit
         case implicit
         case exported
         case implementationOnly
     }
-
+    
     case defaultArgument(parameterIndex: Int, value: DefaultArgument)
     case genericParameterName(depth: Int, index: Int, name: String)
     case modifier(name: String, isPresent: Bool)
@@ -32,4 +32,6 @@ public enum SymbolSupplementalFact: Equatable, Sendable {
     /// Used to cross-check ABI facts; never replaces the mangled declaration's identity.
     case declarationSignature(String)
     case opaqueReturnType(OpaqueReturnType)
+    /// Compiler-verified source spellings, keyed by the original Clang ABI identity.
+    case clangTypeName(ClangTypeNameResolution)
 }
