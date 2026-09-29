@@ -9,7 +9,7 @@ extension SymbolIndexStore {
         case mangledSymbols([String], context: IndexingContext)
         case swiftInterface(URL, requestedInformation: Set<SupplementalInformation>)
         case dyldSharedCache(URL, imageInstallName: String, requestedInformation: Set<SupplementalInformation>)
-        /// Loads a native image; library initializers may run.
+        /// Reads opaque metadata directly from a Mach-O file without executing it.
         case loadedImage(path: String, descriptorSymbols: [String], context: IndexingContext)
         /// A captured dump, including its tool version and invocation for provenance.
         case compilerDump(URL, producer: String, requestedInformation: Set<SupplementalInformation>)

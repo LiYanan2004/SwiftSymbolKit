@@ -23,7 +23,7 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
     )
     var parseOpaqueReturnType = true
     
-    @Option(help: "The native image to load for opaque recovery. Defaults to the TBD install name.")
+    @Option(help: "A Mach-O file to parse for opaque recovery. Defaults to the current system dyld shared cache.")
     var imagePath: String?
     
     mutating func run() async throws {
@@ -37,7 +37,8 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
         let opaqueIndexingResult: IndexingResult?
         if parseOpaqueReturnType, !descriptors.isEmpty {
             opaqueIndexingResult = try await LoadedImageSource(
-                imagePath: imagePath.map(\.expandingTildeInPath) ?? stub.installName,
+                imagePath: imagePath.map(\.expandingTildeInPath),
+                imageInstallName: stub.installName,
                 descriptorSymbols: Array(descriptors.keys),
                 context: .init(moduleName: moduleName, targets: stub.targets),
                 descriptorSymbolTargets: descriptors
@@ -129,14 +130,20 @@ fileprivate extension SwiftInterfaceCommand {
         for diagnostic in diagnostics {
             let logger: Logger
             switch diagnostic.kind {
-                case .unsupportedSymbol: logger = Loggers.symbolExtraction
-                case .conflictingInformation: logger = Loggers.symbolMerging
-                case .incompleteDeclaration: logger = Loggers.interfaceGeneration
+                case .unsupportedSymbol:
+                    logger = Loggers.symbolExtraction
+                case .conflictingInformation:
+                    logger = Loggers.symbolMerging
+                case .incompleteDeclaration:
+                    logger = Loggers.interfaceGeneration
             }
             switch diagnostic.severity {
-                case .info: logger.info("\(diagnostic.message, privacy: .public)")
-                case .warning: logger.warning("\(diagnostic.message, privacy: .public)")
-                case .error: logger.error("\(diagnostic.message, privacy: .public)")
+                case .info:
+                    logger.info("\(diagnostic.message, privacy: .public)")
+                case .warning:
+                    logger.warning("\(diagnostic.message, privacy: .public)")
+                case .error:
+                    logger.error("\(diagnostic.message, privacy: .public)")
             }
         }
     }

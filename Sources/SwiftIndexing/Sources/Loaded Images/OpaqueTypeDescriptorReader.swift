@@ -1,38 +1,43 @@
+import Foundation
+import MachO
+import MachOKit
 import SwiftDemangle
 
 /// Reads the stable Swift descriptor ABI, independently of any runtime parser.
 struct OpaqueTypeDescriptorReader {
-    let image: LoadedMachOImage
+    let machO: any MachORepresentable
+    var readBytes: ((UInt64, Int) throws -> [UInt8])? = nil
+    var resolvePointer: ((UInt64) throws -> UInt64)? = nil
     
     func read(at descriptor: UInt64, declaration: DemangledNode) throws -> [OpaqueReturnType] {
-        let flags: UInt32 = try image.value(at: descriptor)
+        let flags: UInt32 = try value(at: descriptor)
         // ContextDescriptorKind::OpaqueType = 4; bit 7 means generic; bits
         // 8...15 are the version; bit 5 introduces invertible protocol data.
         // https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/include/swift/ABI/MetadataValues.h
         guard flags & 0x1f == 4, flags & 0x80 != 0, flags & 0xff20 == 0 else {
-            throw LoadedMachOImage.ReadError("Unsupported opaque descriptor flags")
+            throw ReadError.unsupportedOpaqueDescriptorFlags
         }
         let ordinals = opaqueOrdinals(in: declaration)
-        guard !ordinals.isEmpty else { throw LoadedMachOImage.ReadError("Declaration has no opaque result") }
+        guard !ordinals.isEmpty else { throw ReadError.missingOpaqueResult }
         let depth = try parameterDepth(descriptor: descriptor, opaqueParameterCount: (ordinals.max() ?? 0) + 1)
         // TargetOpaqueTypeDescriptor: 8-byte ContextDescriptor, then the
         // 8-byte GenericContextDescriptorHeader, one byte per parameter,
         // 4-byte alignment, and 12 bytes per generic requirement.
         // https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/include/swift/ABI/Metadata.h
         // https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/include/swift/ABI/GenericContext.h
-        let parameterCount = Int(try image.value(at: descriptor + 8, as: UInt16.self))
-        let requirementCount = Int(try image.value(at: descriptor + 10, as: UInt16.self))
-        let genericFlags: UInt16 = try image.value(at: descriptor + 14)
-        guard genericFlags == 0 else { throw LoadedMachOImage.ReadError("Generic packs, values, or conditional inverted protocols are unsupported") }
-        let parameterDescriptors = try image.bytes(at: descriptor + 16, count: parameterCount)
-        guard parameterDescriptors.allSatisfy({ $0 & 0x3f == 0 }) else { throw LoadedMachOImage.ReadError("Unsupported generic parameter kind") }
+        let parameterCount = Int(try value(at: descriptor + 8, as: UInt16.self))
+        let requirementCount = Int(try value(at: descriptor + 10, as: UInt16.self))
+        let genericFlags: UInt16 = try value(at: descriptor + 14)
+        guard genericFlags == 0 else { throw ReadError.unsupportedGenericFlags }
+        let parameterDescriptors = try bytes(at: descriptor + 16, count: parameterCount)
+        guard parameterDescriptors.allSatisfy({ $0 & 0x3f == 0 }) else { throw ReadError.unsupportedGenericParameterKind }
         let requirementsStart = (descriptor + 16 + UInt64(parameterCount) + 3) & ~3
         var constraints: [Int: [DemangledNode]] = [:]
         var sameTypes: [Int: [DemangledNode]] = [:]
         for index in 0..<requirementCount {
             let requirement = requirementsStart + UInt64(index * 12)
-            let requirementFlags: UInt32 = try image.value(at: requirement)
-            let subject = try type(at: image.relative(at: requirement + 4))
+            let requirementFlags: UInt32 = try value(at: requirement)
+            let subject = try type(at: relative(at: requirement + 4))
             let subjectOrdinals = parameters(in: subject, atDepth: depth).intersection(ordinals)
             // GenericRequirementKind: protocol=0, sameType=1, baseClass=2.
             // The remaining requirements cannot be silently dropped when they
@@ -41,23 +46,23 @@ struct OpaqueTypeDescriptorReader {
             switch requirementFlags & 0x1f {
                 case 0 where !subjectOrdinals.isEmpty:
                     guard let ordinal = rootParameter(subject, depth: depth), ordinals.contains(ordinal) else {
-                        throw LoadedMachOImage.ReadError("Associated-type protocol requirements cannot be spelled as an opaque constraint")
+                        throw ReadError.unsupportedAssociatedTypeProtocolRequirement
                     }
-                    let protocolAddress = try image.relative(at: requirement + 8, indirectable: true, protocolReference: true)
+                    let protocolAddress = try relative(at: requirement + 8, indirectable: true, protocolReference: true)
                     constraints[ordinal, default: []].append(try contextType(at: protocolAddress))
                 case 2 where !subjectOrdinals.isEmpty:
                     guard let ordinal = rootParameter(subject, depth: depth), ordinals.contains(ordinal) else {
-                        throw LoadedMachOImage.ReadError("Associated-type superclass requirement is unsupported")
+                        throw ReadError.unsupportedAssociatedTypeSuperclassRequirement
                     }
-                    constraints[ordinal, default: []].insert(try type(at: image.relative(at: requirement + 8)), at: 0)
+                    constraints[ordinal, default: []].insert(try type(at: relative(at: requirement + 8)), at: 0)
                 case 1:
-                    let replacement = try type(at: image.relative(at: requirement + 8))
+                    let replacement = try type(at: relative(at: requirement + 8))
                     let affected = subjectOrdinals.union(parameters(in: replacement, atDepth: depth).intersection(ordinals))
                     for ordinal in affected {
                         sameTypes[ordinal, default: []].append(.init(kind: .dependentGenericSameTypeRequirement, children: [subject, replacement]))
                     }
                 default:
-                    if !subjectOrdinals.isEmpty { throw LoadedMachOImage.ReadError("Unsupported opaque generic requirement: \(requirementFlags & 0x1f)") }
+                    if !subjectOrdinals.isEmpty { throw ReadError.unsupportedGenericRequirement(requirementFlags & 0x1f) }
             }
         }
         let underlyingStart = requirementsStart + UInt64(requirementCount * 12)
@@ -67,7 +72,7 @@ struct OpaqueTypeDescriptorReader {
         return ordinals.sorted().map { ordinal in
             let underlying: DemangledNode?
             if ordinal < Int(flags >> 16) {
-                underlying = try? type(at: image.relative(at: underlyingStart + UInt64(ordinal * 4)))
+                underlying = try? type(at: relative(at: underlyingStart + UInt64(ordinal * 4)))
             } else { underlying = nil }
             return OpaqueReturnType(ordinal: ordinal, parameterDepth: depth,
                                     constraints: constraints[ordinal] ?? [], sameTypeRequirements: sameTypes[ordinal] ?? [], underlyingType: underlying)
@@ -75,57 +80,87 @@ struct OpaqueTypeDescriptorReader {
     }
     
     func type(at address: UInt64, depth: Int = 0) throws -> DemangledNode {
-        guard depth < 64 else { throw LoadedMachOImage.ReadError("Symbolic reference nesting limit exceeded") }
+        guard depth < 64 else { throw ReadError.symbolicReferenceNestingLimitExceeded }
         var bytes: [UInt8] = []
         // Manglings contain binary payloads, including embedded zeroes. A
         // relative reference occupies its kind byte plus four payload bytes.
         // https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/docs/ABI/Mangling.rst#symbolic-references
         while bytes.count < 1 << 16 {
-            let byte: UInt8 = try image.value(at: image.adding(Int64(bytes.count), to: address))
+            let byte: UInt8 = try value(at: adding(Int64(bytes.count), to: address))
             if byte == 0 {
                 let scalars = bytes.map { UnicodeScalar($0) }
                 return try SwiftSymbol(scalars, isType: true) { displacement, payloadOffset in
                     let kind = bytes[payloadOffset - 1]
-                    let payloadAddress = try image.adding(Int64(payloadOffset), to: address)
-                    let target = try image.adding(Int64(displacement), to: payloadAddress)
+                    let payloadAddress = try adding(Int64(payloadOffset), to: address)
+                    let target = try adding(Int64(displacement), to: payloadAddress)
                     switch kind {
-                        case 1: return try contextType(at: target, depth: depth + 1)
-                        case 2: return try contextType(at: image.value(at: target, as: UInt64.self), depth: depth + 1)
+                        case 1:
+                            return try contextType(at: target, depth: depth + 1)
+                        case 2:
+                            return try contextType(at: pointer(at: target), depth: depth + 1)
                             // Accessor-function references (kind 9) require execution
                             // or instruction analysis. This reader never invokes them.
-                        default: throw LoadedMachOImage.ReadError("Unsupported symbolic reference kind: \(kind)")
+                        default:
+                            throw ReadError.unsupportedSymbolicReferenceKind(kind)
                     }
                 }
             }
             let length = (1...0x17).contains(byte) ? 5 : (0x18...0x1f).contains(byte) ? 9 : 1
-            bytes += try image.bytes(at: image.adding(Int64(bytes.count), to: address), count: length)
+            bytes += try self.bytes(at: adding(Int64(bytes.count), to: address), count: length)
         }
-        throw LoadedMachOImage.ReadError("Unterminated symbolic mangling")
+        throw ReadError.unterminatedSymbolicMangling
     }
 }
 
 fileprivate extension OpaqueTypeDescriptorReader {
+    func pointer(at address: UInt64) throws -> UInt64 {
+        if let resolvePointer { return try resolvePointer(address) }
+        let rawValue: UInt64 = try value(at: address)
+        // dyld has resolved the binding; MachOKit removes architecture-specific
+        // pointer tags before the descriptor is copied through Mach.
+        let target = machO.stripPointerTags(of: rawValue)
+        guard target != 0 else { throw ReadError.nullIndirectReference }
+        return target
+    }
+    
+    func relative(at address: UInt64, indirectable: Bool = false, protocolReference: Bool = false) throws -> UInt64 {
+        let displacement: Int32 = try value(at: address)
+        guard displacement != 0 else { throw ReadError.nullRelativeReference }
+        // RelativeTargetProtocolDescriptorPointer uses bit 0 for indirection and
+        // bit 1 to distinguish an Objective-C protocol from a Swift descriptor.
+        // https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/include/swift/ABI/MetadataRef.h
+        if protocolReference, displacement & 2 != 0 { throw ReadError.unsupportedObjectiveCProtocolReference }
+        let mask: Int32 = protocolReference ? 3 : indirectable ? 1 : 0
+        let target = try adding(Int64(displacement & ~mask), to: address)
+        return indirectable && displacement & 1 != 0 ? try pointer(at: target) : target
+    }
+    
     func contextType(at address: UInt64, depth: Int = 0) throws -> DemangledNode {
-        guard depth < 64 else { throw LoadedMachOImage.ReadError("Context descriptor cycle or excessive nesting") }
-        let flags: UInt32 = try image.value(at: address)
-        guard flags & 0xff00 == 0 else { throw LoadedMachOImage.ReadError("Unsupported context descriptor version") }
+        guard depth < 64 else { throw ReadError.contextDescriptorNestingLimitExceeded }
+        let flags: UInt32 = try value(at: address)
+        guard flags & 0xff00 == 0 else { throw ReadError.unsupportedContextDescriptorVersion }
         // ContextDescriptorKind and Target{Module,Protocol,Type}ContextDescriptor
         // share Flags + Parent. Named contexts have a relative Name at byte 8.
         // https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/include/swift/ABI/Metadata.h
         let kind = flags & 0x1f
-        if kind == 0 { return .init(kind: .module, contents: .name(try image.name(at: image.relative(at: address + 8)))) }
-        if kind == 1 { return try type(at: image.relative(at: address + 8), depth: depth + 1) }
+        if kind == 0 { return .init(kind: .module, contents: .name(try name(at: relative(at: address + 8)))) }
+        if kind == 1 { return try type(at: relative(at: address + 8), depth: depth + 1) }
         let nodeKind: DemangledNode.Kind
         switch kind {
-            case 3: nodeKind = .protocol
-            case 16: nodeKind = .class
-            case 17: nodeKind = .structure
-            case 18: nodeKind = .enum
-            default: throw LoadedMachOImage.ReadError("Unsupported referenced context kind: \(kind)")
+            case 3:
+                nodeKind = .protocol
+            case 16:
+                nodeKind = .class
+            case 17:
+                nodeKind = .structure
+            case 18:
+                nodeKind = .enum
+            default:
+                throw ReadError.unsupportedContextKind(kind)
         }
-        var parent = try contextType(at: image.relative(at: address + 4, indirectable: true), depth: depth + 1)
+        var parent = try contextType(at: relative(at: address + 4, indirectable: true), depth: depth + 1)
         if parent.kind == .type, parent.children.count == 1 { parent = parent.children[0] }
-        let name = try image.name(at: image.relative(at: address + 8))
+        let name = try name(at: relative(at: address + 8))
         return .init(kind: .type, children: [.init(kind: nodeKind, children: [parent, .init(kind: .identifier, contents: .name(name))])])
     }
     
@@ -133,23 +168,28 @@ fileprivate extension OpaqueTypeDescriptorReader {
         var counts: [Int] = []
         var parentField = descriptor + 4
         var visited = Set<UInt64>()
-        while try image.value(at: parentField, as: Int32.self) != 0 {
-            let parent = try image.relative(at: parentField, indirectable: true)
-            guard visited.insert(parent).inserted, visited.count < 64 else { throw LoadedMachOImage.ReadError("Invalid parent descriptor chain") }
-            let flags: UInt32 = try image.value(at: parent)
+        while try value(at: parentField, as: Int32.self) != 0 {
+            let parent = try relative(at: parentField, indirectable: true)
+            guard visited.insert(parent).inserted, visited.count < 64 else { throw ReadError.invalidParentDescriptorChain }
+            let flags: UInt32 = try value(at: parent)
             if flags & 0x80 != 0 {
                 let headerOffset: UInt64
                 // Fixed descriptor sizes, followed (for nominal types) by the
                 // 8-byte prefix of TargetTypeGenericContextDescriptorHeader.
                 // https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/include/swift/ABI/Metadata.h
                 switch flags & 0x1f {
-                    case 1: headerOffset = 12
-                    case 2, 4: headerOffset = 8
-                    case 16: headerOffset = 44 + 8
-                    case 17, 18: headerOffset = 28 + 8
-                    default: throw LoadedMachOImage.ReadError("Unsupported generic parent descriptor")
+                    case 1:
+                        headerOffset = 12
+                    case 2, 4:
+                        headerOffset = 8
+                    case 16:
+                        headerOffset = 44 + 8
+                    case 17, 18:
+                        headerOffset = 28 + 8
+                    default:
+                        throw ReadError.unsupportedGenericParentDescriptor
                 }
-                counts.append(Int(try image.value(at: parent + headerOffset, as: UInt16.self)))
+                counts.append(Int(try value(at: parent + headerOffset, as: UInt16.self)))
             }
             parentField = parent + 4
         }
@@ -164,9 +204,9 @@ fileprivate extension OpaqueTypeDescriptorReader {
         // that repeat their parent's parameter count. Older descriptor shapes
         // can omit that parent; the opaque header still includes those params.
         // https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/stdlib/public/runtime/MetadataLookup.cpp
-        let total = Int(try image.value(at: descriptor + 8, as: UInt16.self))
+        let total = Int(try value(at: descriptor + 8, as: UInt16.self))
         guard total >= opaqueParameterCount, previous <= total - opaqueParameterCount else {
-            throw LoadedMachOImage.ReadError("Opaque parameter count disagrees with its context")
+            throw ReadError.opaqueParameterCountMismatch
         }
         if previous < total - opaqueParameterCount { depth += 1 }
         return depth
@@ -195,3 +235,146 @@ fileprivate extension OpaqueTypeDescriptorReader {
         return Set(node.children.flatMap { parameters(in: $0, atDepth: depth) })
     }
 }
+
+extension OpaqueTypeDescriptorReader {
+    /// Copy through Mach rather than dereferencing unchecked metadata pointers.
+    /// Invalid or unmapped references produce a recoverable diagnostic.
+    // https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/mach_vm.defs
+    func bytes(at address: UInt64, count: Int) throws -> [UInt8] {
+        if let readBytes { return try readBytes(address, count) }
+        return try Self.memoryBytes(at: address, count: count)
+    }
+
+    static func memoryBytes(at address: UInt64, count: Int) throws -> [UInt8] {
+        guard count >= 0, count <= 1 << 20, address <= UInt64.max - UInt64(count) else {
+            throw ReadError.metadataReadOutOfBounds
+        }
+        if count == 0 { return [] }
+        var result = [UInt8](repeating: 0, count: count)
+        var copied: mach_vm_size_t = 0
+        let status = result.withUnsafeMutableBytes { buffer in
+            mach_vm_read_overwrite(mach_task_self_, address, UInt64(count),
+                                   UInt64(UInt(bitPattern: buffer.baseAddress!)), &copied)
+        }
+        guard status == KERN_SUCCESS, copied == count else {
+            throw ReadError.unreadableMetadataAddress(address)
+        }
+        return result
+    }
+    
+    func value<Value>(at address: UInt64, as type: Value.Type = Value.self) throws -> Value {
+        try bytes(at: address, count: MemoryLayout<Value>.size).withUnsafeBytes { $0.loadUnaligned(as: Value.self) }
+    }
+    
+    func adding(_ displacement: Int64, to address: UInt64) throws -> UInt64 {
+        if displacement < 0 {
+            guard displacement != .min, address >= UInt64(-displacement) else { throw ReadError.relativePointerUnderflow }
+            return address - UInt64(-displacement)
+        }
+        let (result, overflow) = address.addingReportingOverflow(UInt64(displacement))
+        guard !overflow else { throw ReadError.relativePointerOverflow }
+        return result
+    }
+    
+    func name(at address: UInt64) throws -> String {
+        var bytes: [UInt8] = []
+        // Defensive parser limit, not an ABI restriction.
+        for position in 0..<(1 << 16) {
+            let byte: UInt8 = try value(at: adding(Int64(position), to: address))
+            if byte == 0 {
+                guard let name = String(bytes: bytes, encoding: .utf8) else { throw ReadError.invalidDescriptorNameEncoding }
+                return name
+            }
+            bytes.append(byte)
+        }
+        throw ReadError.unterminatedDescriptorName
+    }
+}
+
+// MARK: - Error Handling
+
+extension OpaqueTypeDescriptorReader {
+    enum ReadError: Error, Equatable, CustomStringConvertible {
+        case unsupportedOpaqueDescriptorFlags
+        case missingOpaqueResult
+        case unsupportedGenericFlags
+        case unsupportedGenericParameterKind
+        case unsupportedAssociatedTypeProtocolRequirement
+        case unsupportedAssociatedTypeSuperclassRequirement
+        case symbolicReferenceNestingLimitExceeded
+        case unterminatedSymbolicMangling
+        case nullIndirectReference
+        case nullRelativeReference
+        case unsupportedObjectiveCProtocolReference
+        case contextDescriptorNestingLimitExceeded
+        case unsupportedContextDescriptorVersion
+        case invalidParentDescriptorChain
+        case unsupportedGenericParentDescriptor
+        case opaqueParameterCountMismatch
+        case metadataReadOutOfBounds
+        case relativePointerUnderflow
+        case relativePointerOverflow
+        case invalidDescriptorNameEncoding
+        case unterminatedDescriptorName
+        case unsupportedGenericRequirement(UInt32)
+        case unsupportedSymbolicReferenceKind(UInt8)
+        case unsupportedContextKind(UInt32)
+        case unreadableMetadataAddress(UInt64)
+
+        var description: String {
+            switch self {
+                case .unsupportedOpaqueDescriptorFlags:
+                    return "Unsupported opaque descriptor flags"
+                case .missingOpaqueResult:
+                    return "Declaration has no opaque result"
+                case .unsupportedGenericFlags:
+                    return "Generic packs, values, or conditional inverted protocols are unsupported"
+                case .unsupportedGenericParameterKind:
+                    return "Unsupported generic parameter kind"
+                case .unsupportedAssociatedTypeProtocolRequirement:
+                    return "Associated-type protocol requirements cannot be spelled as an opaque constraint"
+                case .unsupportedAssociatedTypeSuperclassRequirement:
+                    return "Associated-type superclass requirement is unsupported"
+                case .symbolicReferenceNestingLimitExceeded:
+                    return "Symbolic reference nesting limit exceeded"
+                case .unterminatedSymbolicMangling:
+                    return "Unterminated symbolic mangling"
+                case .nullIndirectReference:
+                    return "Null indirect reference"
+                case .nullRelativeReference:
+                    return "Null relative reference"
+                case .unsupportedObjectiveCProtocolReference:
+                    return "Objective-C protocol references are unsupported"
+                case .contextDescriptorNestingLimitExceeded:
+                    return "Context descriptor cycle or excessive nesting"
+                case .unsupportedContextDescriptorVersion:
+                    return "Unsupported context descriptor version"
+                case .invalidParentDescriptorChain:
+                    return "Invalid parent descriptor chain"
+                case .unsupportedGenericParentDescriptor:
+                    return "Unsupported generic parent descriptor"
+                case .opaqueParameterCountMismatch:
+                    return "Opaque parameter count disagrees with its context"
+                case .metadataReadOutOfBounds:
+                    return "Metadata read exceeds its bounds"
+                case .relativePointerUnderflow:
+                    return "Relative pointer underflow"
+                case .relativePointerOverflow:
+                    return "Relative pointer overflow"
+                case .invalidDescriptorNameEncoding:
+                    return "Invalid UTF-8 descriptor name"
+                case .unterminatedDescriptorName:
+                    return "Unterminated descriptor name"
+                case let .unsupportedGenericRequirement(kind):
+                    return "Unsupported opaque generic requirement: \(kind)"
+                case let .unsupportedSymbolicReferenceKind(kind):
+                    return "Unsupported symbolic reference kind: \(kind)"
+                case let .unsupportedContextKind(kind):
+                    return "Unsupported referenced context kind: \(kind)"
+                case let .unreadableMetadataAddress(address):
+                    return "Unreadable metadata address: 0x\(String(address, radix: 16))"
+            }
+        }
+    }
+}
+

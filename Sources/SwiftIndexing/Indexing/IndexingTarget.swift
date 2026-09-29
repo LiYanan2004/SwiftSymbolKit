@@ -6,6 +6,8 @@ public struct IndexingTarget: Hashable, Sendable, Decodable {
         case armv4t, armv5, armv6, armv7, armv7s, armv7k
         case armv6m, armv7m, armv7em
         case arm64, arm64e, arm64_32
+        case arm64_x1 = "arm64.x1"
+        case arm64e_x1 = "arm64e.x1"
     }
 
     public enum Platform: String, Hashable, Sendable, Decodable {

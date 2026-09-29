@@ -8,16 +8,21 @@ public struct OpaqueReturnType: Equatable, Sendable {
     /// primary-associated-type syntax cannot be recovered from runtime metadata.
     public let sameTypeRequirements: [DemangledNode]
     public let underlyingType: DemangledNode?
-
-    public init(ordinal: Int, parameterDepth: Int, constraints: [DemangledNode],
-                sameTypeRequirements: [DemangledNode] = [], underlyingType: DemangledNode? = nil) {
+    
+    public init(
+        ordinal: Int,
+        parameterDepth: Int,
+        constraints: [DemangledNode],
+        sameTypeRequirements: [DemangledNode] = [],
+        underlyingType: DemangledNode? = nil
+    ) {
         self.ordinal = ordinal
         self.parameterDepth = parameterDepth
         self.constraints = constraints
         self.sameTypeRequirements = sameTypeRequirements
         self.underlyingType = underlyingType
     }
-
+    
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.ordinal == rhs.ordinal && lhs.parameterDepth == rhs.parameterDepth
             && lhs.constraints.map(\.declarationKey) == rhs.constraints.map(\.declarationKey)

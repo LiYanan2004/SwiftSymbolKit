@@ -22,9 +22,13 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0"),
         .package(url: "https://github.com/jpsim/Yams.git", from: "6.0.0"),
         .package(url: "https://github.com/swift-precompiled/swift-syntax.git", from: "603.0.2"),
+        .package(url: "https://github.com/p-x9/MachOKit.git", from: "0.53.0"),
     ],
     targets: [
-        .target(name: "SwiftIndexing", dependencies: ["SwiftDemangle"]),
+        .target(name: "SwiftIndexing", dependencies: [
+            "SwiftDemangle",
+            .product(name: "MachOKit", package: "MachOKit"),
+        ]),
         .executableTarget(
             name: "SwiftSymbolCLI",
             dependencies: [

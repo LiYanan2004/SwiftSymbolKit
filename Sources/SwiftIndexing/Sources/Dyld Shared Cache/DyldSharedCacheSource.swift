@@ -1,4 +1,13 @@
-
+/// Reads supplemental metadata from an image in a dyld shared cache.
+///
+/// Integration TODO:
+/// - Consolidate current-system cache selection from `LoadedImageSource` here,
+///   alongside the explicit cache-file input represented by `location`.
+/// - Reuse `MachOImageSymbolResolver` and `OpaqueTypeDescriptorReader` for loaded
+///   cache images; retain a separate input for standalone Mach-O files.
+/// - Emit `.dyldSharedCache` evidence with the image target and UUID, and route
+///   opaque facts through `SymbolIndexStore.mergeOpaqueReturnTypes`.
+/// - Preserve requested-information filtering and per-symbol target coverage.
 public struct DyldSharedCacheSource: IndexingSource {
     public let requestedInformation: Set<SupplementalInformation>
     public let location: String

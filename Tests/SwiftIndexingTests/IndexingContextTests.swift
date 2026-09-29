@@ -1,3 +1,4 @@
+import Foundation
 import SwiftIndexing
 import Testing
 
@@ -39,6 +40,23 @@ struct IndexingContextTests {
             IndexingTarget(architecture: .arm64, platform: .macOS))
         #expect(try IndexingTarget(parsing: "arm64-ios-simulator") != device)
         #expect(try IndexingTarget(parsing: "arm64-maccatalyst") != device)
+    }
+
+    @Test(arguments: [IndexingTarget.Architecture.arm64_x1, .arm64e_x1], ["macos", "apple-macosx27.0"])
+    func x1TargetsPreserveTheirArchitecture(architecture: IndexingTarget.Architecture, suffix: String) throws {
+        let value = "\(architecture.rawValue)-\(suffix)"
+        let target = IndexingTarget(architecture: architecture, platform: .macOS)
+        #expect(try IndexingTarget(parsing: value) == target)
+        let encoded = try JSONEncoder().encode(value)
+        #expect(try JSONDecoder().decode(IndexingTarget.self, from: encoded) == target)
+        #expect(try JSONDecoder().decode(IndexingTarget.Architecture.self,
+            from: JSONEncoder().encode(architecture.rawValue)) == architecture)
+        let context = IndexingContext(moduleName: "Example", targets: [target])
+        for otherArchitecture: IndexingTarget.Architecture in [.arm64, .arm64e, .arm64_x1, .arm64e_x1] where otherArchitecture != architecture {
+            let other = IndexingContext(moduleName: "Example", targets: [.init(architecture: otherArchitecture, platform: .macOS)])
+            #expect(!context.isCompatible(with: other))
+            #expect(!other.isCompatible(with: context))
+        }
     }
 
     @Test(arguments: ["unknown-ios", "arm64-unknown", "arm64-ios-invalid", "arm64-macos-simulator", "arm64-ios26..2"])

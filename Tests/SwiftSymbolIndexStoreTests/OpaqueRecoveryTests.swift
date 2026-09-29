@@ -1,4 +1,5 @@
 import Foundation
+import MachOKit
 import Testing
 import SwiftIndexing
 @testable import SwiftSymbolIndexStore
@@ -19,9 +20,10 @@ struct OpaqueRecoveryTests {
         let target = IndexingTarget(architecture: .x86_64, platform: .macOS)
         #endif
         let context = IndexingContext(moduleName: "OpaqueFixtures", targets: [target])
-        let source = LoadedImageSource(imagePath: library.path,
+        let source = LoadedImageSource(imagePath: library.path, imageInstallName: "/unused/install/name",
             descriptorSymbols: symbols.filter { $0.hasSuffix("QOMQ") }, context: context)
         let indexingResult = try await source.read()
+        #expect(!MachOImage.images.contains { $0.path == library.path })
         #expect(indexingResult.exportedSymbols.isEmpty)
         #expect(!indexingResult.evidence.isEmpty)
         #expect(indexingResult.evidence.allSatisfy { $0.source == indexingResult.source })
@@ -54,6 +56,17 @@ struct OpaqueRecoveryTests {
         #expect(index.evidence.count == evidenceCount)
         #expect(try await writer.write(index).text == output.text)
 
+        // A file for another platform can resolve metadata contained in that file.
+        let iosLibrary = directory.appendingPathComponent("libOpaqueFixtures-ios.dylib")
+        _ = try run(["vtool", "-set-build-version", "ios", "17.0", "18.0", "-replace",
+            "-output", iosLibrary.path, library.path])
+        let iosTarget = IndexingTarget(architecture: target.architecture, platform: .iOS)
+        let iosResult = try await LoadedImageSource(imagePath: iosLibrary.path,
+            descriptorSymbols: source.descriptorSymbols.filter { $0.contains("6simple") },
+            context: .init(moduleName: context.moduleName, targets: [iosTarget])).read()
+        #expect(iosResult.evidence.count == 1)
+        #expect(iosResult.diagnostics.isEmpty)
+
         let missing = try await LoadedImageSource(imagePath: library.path,
             descriptorSymbols: ["_$s14OpaqueFixtures7missingQryFQOMQ"], context: context).read()
         #expect(missing.evidence.isEmpty)
@@ -70,15 +83,21 @@ struct OpaqueRecoveryTests {
         #expect(automatic.context.targets == [target])
         #expect(automatic.evidence.count == indexingResult.evidence.count)
         #expect(!automatic.diagnostics.contains { $0.mangledSymbols.contains(foreignDescriptor) })
-        await #expect(throws: (any Error).self) {
-            try await LoadedImageSource(imagePath: library.path, descriptorSymbols: source.descriptorSymbols,
+        let expectedMismatch = "Loaded MachO Image mismatch: expected [\(otherTarget.architecture.rawValue)-macos], but get \(target.architecture.rawValue)-macos"
+        var automaticMismatch: String?
+        do {
+            _ = try await LoadedImageSource(imagePath: library.path, descriptorSymbols: source.descriptorSymbols,
                 context: .init(moduleName: context.moduleName, targets: [otherTarget]),
                 descriptorSymbolTargets: Dictionary(uniqueKeysWithValues: source.descriptorSymbols.map { ($0, Set([otherTarget])) })).read()
+        } catch {
+            automaticMismatch = String(describing: error)
         }
+        #expect(automaticMismatch == expectedMismatch)
         let mismatched = try await LoadedImageSource(imagePath: library.path, descriptorSymbols: source.descriptorSymbols,
             context: .init(moduleName: context.moduleName, targets: [otherTarget])).read()
         #expect(mismatched.evidence.isEmpty)
         #expect(mismatched.diagnostics.count == source.descriptorSymbols.count)
+        #expect(mismatched.diagnostics.allSatisfy { $0.message == "Opaque recovery: \(expectedMismatch)" })
 
         let simple = try #require(index.declarationsByID.values.first { $0.name == "simple" })
         let evidence = try #require(indexingResult.evidence.first {
