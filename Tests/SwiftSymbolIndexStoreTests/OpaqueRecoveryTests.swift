@@ -23,6 +23,8 @@ struct OpaqueRecoveryTests {
             descriptorSymbols: symbols.filter { $0.hasSuffix("QOMQ") }, context: context)
         let indexingResult = try await source.read()
         #expect(indexingResult.exportedSymbols.isEmpty)
+        #expect(!indexingResult.evidence.isEmpty)
+        #expect(indexingResult.evidence.allSatisfy { $0.source == indexingResult.source })
         #expect(!indexingResult.diagnostics.contains { $0.severity == .warning }, "\(indexingResult.diagnostics.map(\.message))")
         var index = SymbolIndexStore()
         try await index.ingest(MangledSymbolSource(exportedSymbols: symbols, context: context))
@@ -54,7 +56,7 @@ struct OpaqueRecoveryTests {
 
         let missing = try await LoadedImageSource(imagePath: library.path,
             descriptorSymbols: ["_$s14OpaqueFixtures7missingQryFQOMQ"], context: context).read()
-        #expect(missing.observations.isEmpty)
+        #expect(missing.evidence.isEmpty)
         #expect(missing.diagnostics.contains { $0.severity == .warning })
 
         let otherTarget = IndexingTarget(architecture: target.architecture == .arm64 ? .x86_64 : .arm64, platform: .macOS)
@@ -66,7 +68,7 @@ struct OpaqueRecoveryTests {
             context: .init(moduleName: context.moduleName, targets: [target, otherTarget]),
             descriptorSymbolTargets: coverage).read()
         #expect(automatic.context.targets == [target])
-        #expect(automatic.observations.count == indexingResult.observations.count)
+        #expect(automatic.evidence.count == indexingResult.evidence.count)
         #expect(!automatic.diagnostics.contains { $0.mangledSymbols.contains(foreignDescriptor) })
         await #expect(throws: (any Error).self) {
             try await LoadedImageSource(imagePath: library.path, descriptorSymbols: source.descriptorSymbols,
@@ -75,18 +77,46 @@ struct OpaqueRecoveryTests {
         }
         let mismatched = try await LoadedImageSource(imagePath: library.path, descriptorSymbols: source.descriptorSymbols,
             context: .init(moduleName: context.moduleName, targets: [otherTarget])).read()
-        #expect(mismatched.observations.isEmpty)
+        #expect(mismatched.evidence.isEmpty)
         #expect(mismatched.diagnostics.count == source.descriptorSymbols.count)
 
         let simple = try #require(index.declarationsByID.values.first { $0.name == "simple" })
-        let observation = try #require(indexingResult.observations.first {
+        let evidence = try #require(indexingResult.evidence.first {
             if case .mangledSymbol(let name) = $0.subject { return name.contains("6simple") }
             return false
         })
+        let originalFact = try #require(index.resolvedFactsBySubject[.declaration(simple.id)]?.first)
+        #expect(originalFact.confidence == .singleSource)
+        #expect(originalFact.evidence.first?.location == evidence.location)
+        #expect(originalFact.evidence.first?.source == evidence.source)
+
+        let corroboratingSource = SymbolEvidenceSource(kind: .loadedImage, location: "corroborating-image",
+            artifactIdentifier: "corroborating-uuid", lineageIdentifier: "independent-build")
+        let corroboratingEvidence = SymbolEvidence(source: corroboratingSource, subject: evidence.subject,
+            fact: evidence.fact, location: evidence.location)
+        let inconsistent = IndexingResult(source: indexingResult.source, context: context,
+            evidence: [evidence, corroboratingEvidence])
+        #expect(throws: SymbolIndexStore.IngestionError.inconsistentEvidenceSource) {
+            try index.merge(inconsistent)
+        }
+        #expect(index.evidence.count == evidenceCount)
+        #expect(!index.sources.contains(corroboratingSource))
+        #expect(try await writer.write(index).text == output.text)
+
+        try index.merge(IndexingResult(source: corroboratingSource, context: context,
+            evidence: [corroboratingEvidence]))
+        let corroboratedFact = try #require(index.resolvedFactsBySubject[.declaration(simple.id)]?.first)
+        #expect(corroboratedFact.confidence == .corroborated)
+        #expect(corroboratedFact.evidence.count == 2)
+        #expect(index.sourcesByDeclarationID[simple.id]?.contains(corroboratingSource) == true)
+        #expect(try await writer.write(index).text == output.text)
+
         let different = OpaqueReturnType(ordinal: 0, parameterDepth: 0, constraints: [])
-        let conflict = IndexingResult(source: .init(kind: .loadedImage, location: "another-image",
-            artifactIdentifier: "another-uuid", lineageIdentifier: "another-build"), context: context,
-            observations: [.init(subject: observation.subject, fact: .opaqueReturnType(different), location: observation.location)])
+        let conflictSource = SymbolEvidenceSource(kind: .loadedImage, location: "another-image",
+            artifactIdentifier: "another-uuid", lineageIdentifier: "another-build")
+        let conflict = IndexingResult(source: conflictSource, context: context,
+            evidence: [.init(source: conflictSource, subject: evidence.subject,
+                fact: .opaqueReturnType(different), location: evidence.location)])
         try index.merge(conflict)
         #expect(index.resolvedFactsBySubject[.declaration(simple.id)]?.isEmpty == true)
         #expect(index.diagnostics.contains { $0.kind == .conflictingInformation })

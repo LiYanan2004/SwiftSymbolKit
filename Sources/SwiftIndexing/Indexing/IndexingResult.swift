@@ -15,7 +15,8 @@ public struct IndexingResult: Sendable {
     /// Target coverage for each linker spelling in exportedSymbols.
     public let exportedSymbolTargets: [String: Set<IndexingTarget>]
     /// Includes unresolved source identities and source-only declarations such as aliases.
-    public let observations: [SymbolObservation]
+    /// Each item must have the same source as this indexing result.
+    public let evidence: [SymbolEvidence]
 
     public init(source: SymbolEvidenceSource, context: IndexingContext,
                 declarations: [SymbolDeclaration] = [], symbolRecords: [SymbolRecord] = [],
@@ -23,7 +24,7 @@ public struct IndexingResult: Sendable {
                 protocolRequirements: [ProtocolConformanceRequirement] = [],
                 runtimeSymbols: [RuntimeSymbolRecord] = [], diagnostics: [SymbolDiagnostic] = [],
                 exportedSymbols: Set<String> = [],
-                exportedSymbolTargets: [String: Set<IndexingTarget>]? = nil, observations: [SymbolObservation] = []) {
+                exportedSymbolTargets: [String: Set<IndexingTarget>]? = nil, evidence: [SymbolEvidence] = []) {
         self.source = source
         self.context = context
         self.declarations = declarations
@@ -35,7 +36,7 @@ public struct IndexingResult: Sendable {
         self.exportedSymbols = exportedSymbols
         self.exportedSymbolTargets = exportedSymbolTargets
             ?? Dictionary(uniqueKeysWithValues: exportedSymbols.map { ($0, context.targets) })
-        self.observations = observations
+        self.evidence = evidence
     }
 }
 

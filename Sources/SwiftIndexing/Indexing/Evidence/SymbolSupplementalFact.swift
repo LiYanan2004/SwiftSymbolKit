@@ -1,4 +1,4 @@
-/// One observation per field, so unrelated facts can be resolved independently.
+/// One fact per field, so unrelated facts can be resolved independently.
 /// Source fragments must be parsed and semantically validated before emission.
 public enum SymbolSupplementalFact: Equatable, Sendable {
     public enum DefaultArgument: Equatable, Sendable {
@@ -17,7 +17,7 @@ public enum SymbolSupplementalFact: Equatable, Sendable {
     case defaultArgument(parameterIndex: Int, value: DefaultArgument)
     case genericParameterName(depth: Int, index: Int, name: String)
     case modifier(name: String, isPresent: Bool)
-    /// A nil spelling records explicit absence. Missing observations mean unknown.
+    /// A nil spelling records explicit absence. Missing evidence means unknown.
     case attribute(name: String, spelling: String?)
     /// Order is significant; an empty list records explicit absence.
     case primaryAssociatedTypes([String])

@@ -49,7 +49,7 @@ public struct LoadedImageSource: IndexingSource {
             selectedTargets = [selectedTarget]
         } else { selectedTargets = context.targets }
         let reader = OpaqueTypeDescriptorReader(image: image)
-        var observations: [SymbolObservation] = []
+        var recoveredTypes: [(symbol: String, type: OpaqueReturnType)] = []
         var diagnostics: [SymbolDiagnostic] = []
         var identifiers = Set<String>()
         for symbol in Set(descriptorSymbols).sorted() {
@@ -70,7 +70,7 @@ public struct LoadedImageSource: IndexingSource {
                 identifiers.insert(identity.identifier)
                 let recovered = try reader.read(at: address, declaration: declaration)
                 for type in recovered {
-                    observations.append(.init(subject: .mangledSymbol(symbol), fact: .opaqueReturnType(type), location: symbol))
+                    recoveredTypes.append((symbol: symbol, type: type))
                     if type.underlyingType == nil {
                         diagnostics.append(.init(kind: .incompleteDeclaration,
                             message: "Opaque underlying type could not be resolved; accessor functions are not executed.",
@@ -88,6 +88,10 @@ public struct LoadedImageSource: IndexingSource {
         // A loaded image's UUID identifies the host build. It cannot establish
         // that the runtime library was built from the caller's SDK version.
         let imageContext = IndexingContext(moduleName: context.moduleName, targets: selectedTargets)
-        return IndexingResult(source: source, context: imageContext, diagnostics: diagnostics, observations: observations)
+        let evidence = recoveredTypes.map {
+            SymbolEvidence(source: source, subject: .mangledSymbol($0.symbol),
+                fact: .opaqueReturnType($0.type), location: $0.symbol)
+        }
+        return IndexingResult(source: source, context: imageContext, diagnostics: diagnostics, evidence: evidence)
     }
 }

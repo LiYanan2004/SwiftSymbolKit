@@ -54,7 +54,7 @@ public struct SymbolIndexStore: Sendable {
     public private(set) var exportedSymbols: Set<String> = []
     public private(set) var exportedSymbolTargets: [String: Set<IndexingTarget>] = [:]
     public private(set) var evidence: [SymbolEvidence] = []
-    public private(set) var resolvedFactsBySubject: [SymbolResolvedSubject: [ResolvedSymbolFact]] = [:]
+    public private(set) var resolvedFactsBySubject: [SymbolResolvedSubject: [SymbolSupplementalFact.Resolved]] = [:]
     public private(set) var exportAssessmentsByDeclarationID: [SymbolDeclaration.ID: SymbolExportAssessment] = [:]
     public private(set) var reconciliationIssues: [SymbolIndexIssue] = []
 
@@ -65,6 +65,7 @@ public struct SymbolIndexStore: Sendable {
         case incompatibleContext
         case primarySourceRequired
         case differentPrimarySource
+        case inconsistentEvidenceSource
         case invalidExportEvidence
         case unsupportedSupplementalFact
     }
@@ -73,6 +74,9 @@ public struct SymbolIndexStore: Sendable {
     /// export eligibility belong to the index; source adapters only produce facts.
     @discardableResult
     public mutating func merge(_ result: IndexingResult) throws -> MergeResult {
+        guard result.evidence.allSatisfy({ $0.source == result.source }) else {
+            throw IngestionError.inconsistentEvidenceSource
+        }
         guard result.context.isValid else { throw IngestionError.incompatibleContext }
         if let context {
             guard result.context.isCompatible(with: context) else { throw IngestionError.incompatibleContext }
@@ -89,7 +93,7 @@ public struct SymbolIndexStore: Sendable {
         if result.source.kind == .loadedImage {
             return try mergeOpaqueReturnTypes(result)
         }
-        guard result.source.kind == .mangledSymbols, result.observations.isEmpty else {
+        guard result.source.kind == .mangledSymbols, result.evidence.isEmpty else {
             throw IngestionError.unsupportedSupplementalFact
         }
 
@@ -154,15 +158,15 @@ fileprivate extension SymbolIndexStore {
               result.conformances.isEmpty, result.protocolRequirements.isEmpty,
               result.runtimeSymbols.isEmpty, result.exportedSymbols.isEmpty,
               result.exportedSymbolTargets.isEmpty else { throw IngestionError.invalidExportEvidence }
-        guard result.observations.allSatisfy({
+        guard result.evidence.allSatisfy({
             if case .opaqueReturnType = $0.fact, case .mangledSymbol = $0.subject { return true }
             return false
         }) else { throw IngestionError.unsupportedSupplementalFact }
         var affected = Set<SymbolDeclaration.ID>()
         var diagnostics = result.diagnostics
-        for observation in result.observations {
-            guard case .mangledSymbol(let symbol) = observation.subject,
-                  case .opaqueReturnType(let recovered) = observation.fact else { continue }
+        for incoming in result.evidence {
+            guard case .mangledSymbol(let symbol) = incoming.subject,
+                  case .opaqueReturnType(let recovered) = incoming.fact else { continue }
             let normalized = MangledSymbolSource.normalizedSymbol(symbol)
             let candidates = symbolRecordsByMangledName[normalized]?.declarationIDs.filter {
                 guard let signature = declarationsByID[$0]?.signature else { return false }
@@ -177,11 +181,10 @@ fileprivate extension SymbolIndexStore {
                     mangledSymbols: [symbol], declarationID: nil, severity: .warning))
                 continue
             }
-            let incoming = SymbolEvidence(source: result.source, observation: observation)
             var related = opaqueEvidenceByDeclarationID[declarationID]?[recovered.ordinal] ?? []
             if !related.contains(where: {
-                $0.source == incoming.source && $0.observation.location == observation.location
-                    && $0.observation.fact == observation.fact
+                $0.source == incoming.source && $0.location == incoming.location
+                    && $0.fact == incoming.fact
             }) {
                 related.append(incoming)
                 evidence.append(incoming)
@@ -192,9 +195,9 @@ fileprivate extension SymbolIndexStore {
                 if case .opaqueReturnType(let type) = $0.fact { return type.ordinal == recovered.ordinal }
                 return false
             }
-            if related.allSatisfy({ $0.observation.fact == observation.fact }) {
-                let confidence: ResolvedSymbolFact.Confidence = Set(related.map { $0.source.lineageIdentifier }).count > 1 ? .corroborated : .singleSource
-                resolvedFactsBySubject[subject, default: []].append(.init(subject: subject, fact: observation.fact,
+            if related.allSatisfy({ $0.fact == incoming.fact }) {
+                let confidence: SymbolSupplementalFactConfidence = Set(related.map { $0.source.lineageIdentifier }).count > 1 ? .corroborated : .singleSource
+                resolvedFactsBySubject[subject, default: []].append(.init(subject: subject, fact: incoming.fact,
                     confidence: confidence, evidence: related))
             } else {
                 diagnostics.append(.init(kind: .conflictingInformation,
