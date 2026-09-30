@@ -10,6 +10,8 @@
 /// overloads, generic constraints, extension context and typealias expansion.
 public enum SymbolEvidenceSubject: Sendable {
     case declaration(SymbolDeclaration.ID)
+    /// Enum case names are unique within their structurally identified owner.
+    case enumCase(owner: SymbolDeclaration.ID, name: String)
     case mangledSymbol(String)
     case sourceDeclaration(moduleName: String, context: [String], signature: String, usr: String?)
     case module(String)

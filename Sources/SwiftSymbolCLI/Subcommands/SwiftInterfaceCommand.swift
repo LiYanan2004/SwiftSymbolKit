@@ -45,7 +45,7 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
             ).read()
         } else { opaqueIndexingResult = nil }
         let selectedTargets = opaqueIndexingResult?.context.targets ?? stub.targets
-        let symbolTargets = stub.swiftSymbolTargets.compactMapValues { targets -> Set<IndexingTarget>? in
+        let symbolTargets = stub.swiftSymbolTargets.compactMapValues { targets -> Set<CompilerTarget>? in
             let coverage = targets.intersection(selectedTargets)
             return coverage.isEmpty ? nil : coverage
         }
@@ -85,7 +85,7 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
 
 fileprivate extension SwiftInterfaceCommand {
     func mergeMangledSymbols(
-        _ symbolTargets: [String: Set<IndexingTarget>],
+        _ symbolTargets: [String: Set<CompilerTarget>],
         context: IndexingContext,
         location: String,
         into symbolIndexStore: inout SymbolIndexStore

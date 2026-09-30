@@ -45,6 +45,7 @@ public struct SymbolIndexStore: Sendable {
     }
     private var membersByID: [SymbolDeclaration.ID: Set<SymbolDeclaration.ID>] = [:]
     private var opaqueEvidenceByDeclarationID: [SymbolDeclaration.ID: [Int: [SymbolEvidence]]] = [:]
+    private var modifierEvidenceByDeclarationID: [SymbolDeclaration.ID: [SymbolEvidence]] = [:]
     
     /// Resolution status and all verified candidates for each original Clang ABI identity.
     public private(set) var clangTypeNamesByClangIdentity: [ClangTypeIdentity: ClangTypeNameResolution] = [:]
@@ -58,7 +59,7 @@ public struct SymbolIndexStore: Sendable {
     public private(set) var sourcesByDeclarationID: [SymbolDeclaration.ID: Set<SymbolEvidenceSource>] = [:]
     /// Normalized symbols supported by the selected TBD/export surface.
     public private(set) var exportedSymbols: Set<String> = []
-    public private(set) var exportedSymbolTargets: [String: Set<IndexingTarget>] = [:]
+    public private(set) var exportedSymbolTargets: [String: Set<CompilerTarget>] = [:]
     public private(set) var evidence: [SymbolEvidence] = []
     public private(set) var resolvedFactsBySubject: [SymbolResolvedSubject: [SymbolSupplementalFact.Resolved]] = [:]
     public private(set) var exportAssessmentsByDeclarationID: [SymbolDeclaration.ID: SymbolExportAssessment] = [:]
@@ -97,10 +98,39 @@ public struct SymbolIndexStore: Sendable {
         }
         
         if result.source.kind == .compilerDump {
+            if result.evidence.isEmpty || result.evidence.contains(where: { Self.isModifierFact($0.fact) }) {
+                return try mergeDeclarationModifiers(result)
+            }
             return try mergeClangTypeNames(result)
         }
         if result.source.kind == .loadedImage {
-            return try mergeOpaqueReturnTypes(result)
+            guard result.evidence.allSatisfy({
+                if case .opaqueReturnType = $0.fact { return true }
+                if case .enumCaseIndirectStorage = $0.fact { return true }
+                return false
+            }) else { throw IngestionError.unsupportedSupplementalFact }
+            let opaque = IndexingResult(source: result.source, context: result.context,
+                diagnostics: result.diagnostics, evidence: result.evidence.filter {
+                    if case .opaqueReturnType = $0.fact { return true }; return false
+                })
+            let modifiers = IndexingResult(source: result.source, context: result.context,
+                evidence: result.evidence.filter { Self.isModifierFact($0.fact) })
+            // Validate supplemental shape before either reconciliation mutates the index.
+            guard result.declarations.isEmpty, result.symbolRecords.isEmpty, result.conformances.isEmpty,
+                  result.protocolRequirements.isEmpty, result.runtimeSymbols.isEmpty,
+                  result.exportedSymbols.isEmpty, result.exportedSymbolTargets.isEmpty else {
+                throw IngestionError.invalidExportEvidence
+            }
+            guard result.evidence.allSatisfy({ observation in
+                if case .opaqueReturnType = observation.fact, case .mangledSymbol = observation.subject { return true }
+                if case .enumCaseIndirectStorage = observation.fact, case .enumCase = observation.subject { return true }
+                return false
+            }) else { throw IngestionError.unsupportedSupplementalFact }
+            let opaqueResult = try mergeOpaqueReturnTypes(opaque)
+            guard !modifiers.evidence.isEmpty else { return opaqueResult }
+            let modifierResult = try mergeDeclarationModifiers(modifiers)
+            return .init(affectedDeclarationIDs: opaqueResult.affectedDeclarationIDs.union(modifierResult.affectedDeclarationIDs),
+                         diagnostics: opaqueResult.diagnostics + modifierResult.diagnostics)
         }
         guard result.source.kind == .mangledSymbols, result.evidence.isEmpty else {
             throw IngestionError.unsupportedSupplementalFact
@@ -159,6 +189,89 @@ public struct SymbolIndexStore: Sendable {
 }
 
 fileprivate extension SymbolIndexStore {
+    static func isModifierFact(_ fact: SymbolSupplementalFact) -> Bool {
+        switch fact {
+        case .modifier, .enumCaseIndirectStorage: return true
+        default: return false
+        }
+    }
+
+    mutating func mergeDeclarationModifiers(_ result: IndexingResult) throws -> MergeResult {
+        guard result.context.targets == context?.targets,
+              result.source.kind != .compilerDump || (result.context.targets.count == 1 && result.source.producer != nil) else {
+            throw IngestionError.incompatibleContext
+        }
+        guard result.declarations.isEmpty, result.symbolRecords.isEmpty, result.conformances.isEmpty,
+              result.protocolRequirements.isEmpty, result.runtimeSymbols.isEmpty,
+              result.exportedSymbols.isEmpty, result.exportedSymbolTargets.isEmpty else {
+            throw IngestionError.invalidExportEvidence
+        }
+        guard result.evidence.allSatisfy({ observation in
+            switch (result.source.kind, observation.subject, observation.fact) {
+            case (.compilerDump, .declaration, .modifier(let name, _)): return name == "final" || name == "indirect"
+            case (.compilerDump, .declaration, .enumCaseIndirectStorage), (.loadedImage, .enumCase, .enumCaseIndirectStorage): return true
+            default: return false
+            }
+        }) else { throw IngestionError.unsupportedSupplementalFact }
+        var diagnostics = result.diagnostics
+        for observation in result.evidence {
+            let candidates: [SymbolDeclaration]
+            switch observation.subject {
+            case .declaration(let identifier): candidates = declarationsByID[identifier].map { [$0] } ?? []
+            case .enumCase(let owner, let name):
+                candidates = members(of: owner).filter { $0.kind == .enumCase && $0.name == name }
+            default: candidates = []
+            }
+            guard candidates.count == 1, let declaration = candidates.first,
+                  acceptsModifierFact(observation.fact, for: declaration) else {
+                diagnostics.append(.init(kind: .incompleteDeclaration,
+                    message: "Declaration modifier observation does not match one indexed declaration.",
+                    mangledSymbols: [], declarationID: nil, severity: .warning))
+                continue
+            }
+            var related = modifierEvidenceByDeclarationID[declaration.id] ?? []
+            if !related.contains(where: { $0.source == observation.source && $0.location == observation.location && $0.fact == observation.fact }) {
+                related.append(observation)
+                modifierEvidenceByDeclarationID[declaration.id] = related
+                evidence.append(observation)
+            }
+            sourcesByDeclarationID[declaration.id, default: []].insert(result.source)
+        }
+        sources.insert(result.source)
+        let affected = reconcileDeclarationModifiers(diagnostics: &diagnostics)
+        let merged = mergeDeclarations(.init(source: result.source, context: result.context, diagnostics: diagnostics))
+        return .init(affectedDeclarationIDs: affected, diagnostics: merged.diagnostics)
+    }
+
+    func acceptsModifierFact(_ fact: SymbolSupplementalFact, for declaration: SymbolDeclaration) -> Bool {
+        switch fact {
+        case .modifier("indirect", _): return declaration.kind == .enumeration || declaration.kind == .enumCase
+        case .enumCaseIndirectStorage: return declaration.kind == .enumCase
+        case .modifier("final", _):
+            if declaration.kind == .class { return true }
+            guard [.function, .property, .subscript].contains(declaration.kind) else { return false }
+            switch declaration.context {
+            case .declaration(let owner): return declarationsByID[owner]?.kind == .class
+            case .typeExtension(let context): return declarationsByID[context.extendedType]?.kind == .class
+            default: return false
+            }
+        default: return false
+        }
+    }
+
+    mutating func reconcileDeclarationModifiers(diagnostics: inout [SymbolDiagnostic]) -> Set<SymbolDeclaration.ID> {
+        let result = DeclarationModifierReconciler(declarations: declarationsByID,
+            evidenceByDeclarationID: modifierEvidenceByDeclarationID).reconcile()
+        diagnostics += result.diagnostics
+        for identifier in modifierEvidenceByDeclarationID.keys {
+            resolvedFactsBySubject[.declaration(identifier), default: []].removeAll { Self.isModifierFact($0.fact) }
+        }
+        for (subject, facts) in result.factsBySubject {
+            resolvedFactsBySubject[subject, default: []] += facts
+        }
+        return Set(modifierEvidenceByDeclarationID.keys)
+    }
+
     mutating func mergeClangTypeNames(_ result: IndexingResult) throws -> MergeResult {
         // A name verified for one compiler target cannot be applied to other targets.
         guard result.context.targets == context?.targets, result.context.targets.count == 1,

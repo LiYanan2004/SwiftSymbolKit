@@ -3,8 +3,8 @@ import SwiftSymbolIndexStore
 import Testing
 
 struct ContextIngestionTests {
-    private let device = IndexingTarget(architecture: .arm64, platform: .iOS)
-    private let authenticatedDevice = IndexingTarget(architecture: .arm64e, platform: .iOS)
+    private let device = CompilerTarget(architecture: .arm64, platform: .iOS)
+    private let authenticatedDevice = CompilerTarget(architecture: .arm64e, platform: .iOS)
     private let symbol = "$s7Example3FooVMn"
 
     @Test func primaryEstablishesContextAndRetainsPerSymbolTargetsAcrossBatches() async throws {

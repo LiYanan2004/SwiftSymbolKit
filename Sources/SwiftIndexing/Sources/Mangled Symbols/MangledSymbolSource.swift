@@ -5,10 +5,10 @@ public struct MangledSymbolSource: IndexingSource {
     public let context: IndexingContext
     public let source: SymbolEvidenceSource
     public let exportedSymbols: [String]
-    public let exportedSymbolTargets: [String: Set<IndexingTarget>]
+    public let exportedSymbolTargets: [String: Set<CompilerTarget>]
 
     public init(exportedSymbols: [String], context: IndexingContext,
-                exportedSymbolTargets: [String: Set<IndexingTarget>]? = nil,
+                exportedSymbolTargets: [String: Set<CompilerTarget>]? = nil,
                 source: SymbolEvidenceSource = .init(kind: .mangledSymbols, location: "caller",
                     artifactIdentifier: "caller-supplied-exports", lineageIdentifier: "caller-supplied-exports")) {
         self.exportedSymbols = exportedSymbols

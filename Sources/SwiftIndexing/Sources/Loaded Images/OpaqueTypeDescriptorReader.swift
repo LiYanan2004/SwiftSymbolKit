@@ -112,7 +112,7 @@ struct OpaqueTypeDescriptorReader {
     }
 }
 
-fileprivate extension OpaqueTypeDescriptorReader {
+extension OpaqueTypeDescriptorReader {
     func pointer(at address: UInt64) throws -> UInt64 {
         if let resolvePointer { return try resolvePointer(address) }
         let rawValue: UInt64 = try value(at: address)

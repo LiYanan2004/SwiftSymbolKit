@@ -50,7 +50,7 @@ public struct ClangTypeNameResolver: Sendable {
     public func resolve(_ identities: Set<ClangTypeIdentity>, importedModules: Set<String>,
                         context: IndexingContext, outputDirectory: URL) throws -> IndexingResult {
         guard context.isValid,
-              context.targets == [try IndexingTarget(parsing: configuration.targetTriple)] else {
+              context.targets == [try CompilerTarget(parsing: configuration.targetTriple)] else {
             throw ResolutionError.incompatibleContext
         }
         for module in importedModules {

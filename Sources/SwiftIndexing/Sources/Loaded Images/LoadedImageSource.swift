@@ -9,23 +9,26 @@ public struct LoadedImageSource: IndexingSource {
     public let imagePath: String?
     public let imageInstallName: String?
     public let descriptorSymbols: [String]
+    public let enumDescriptorSymbols: [String]
     public let context: IndexingContext
-    /// When supplied, select the loaded image's target and read only descriptor
-    /// symbols covered by that target. The result reports the selected context.
-    public let descriptorSymbolTargets: [String: Set<IndexingTarget>]?
+    /// Coverage for every opaque and enum descriptor supplied to this reader.
+    /// Selects the image's target and reports that selected context in the result.
+    public let descriptorSymbolTargets: [String: Set<CompilerTarget>]?
     
     public init(
         imagePath: String? = nil,
         imageInstallName: String? = nil,
         descriptorSymbols: [String],
         context: IndexingContext,
-        descriptorSymbolTargets: [String: Set<IndexingTarget>]? = nil
+        descriptorSymbolTargets: [String: Set<CompilerTarget>]? = nil,
+        enumDescriptorSymbols: [String] = []
     ) {
         self.imagePath = imagePath
         self.imageInstallName = imageInstallName
         self.descriptorSymbols = descriptorSymbols
         self.context = context
         self.descriptorSymbolTargets = descriptorSymbolTargets
+        self.enumDescriptorSymbols = enumDescriptorSymbols
     }
     
     public func read() async throws -> IndexingResult {
@@ -33,13 +36,13 @@ public struct LoadedImageSource: IndexingSource {
             throw ReadError.invalidTargetSelection
         }
         if let descriptorSymbolTargets {
-            guard Set(descriptorSymbolTargets.keys) == Set(descriptorSymbols),
+            guard Set(descriptorSymbolTargets.keys) == Set(descriptorSymbols + enumDescriptorSymbols),
                   descriptorSymbolTargets.values.allSatisfy({ !$0.isEmpty && $0.isSubset(of: context.targets) }) else {
                 throw IndexingSourceError.invalidSymbolTargets
             }
         }
         let reader: OpaqueTypeDescriptorReader
-        let identity: (target: IndexingTarget, identifier: String)
+        let identity: (target: CompilerTarget, identifier: String)
         let symbol: (String) throws -> UInt64
         let location: String
         if let imagePath {
@@ -79,7 +82,7 @@ public struct LoadedImageSource: IndexingSource {
             symbol = { try resolver.address(of: $0, in: image) }
             location = imageInstallName
         }
-        let selectedTargets: Set<IndexingTarget>
+        let selectedTargets: Set<CompilerTarget>
         if descriptorSymbolTargets != nil {
             guard context.targets.contains(identity.target) else {
                 throw ReadError.platformOrArchMismatch(expect: context.targets, real: identity.target)
@@ -121,14 +124,41 @@ public struct LoadedImageSource: IndexingSource {
             }
         }
         let identifier = identifiers.sorted().joined(separator: ",")
+        var enumRecords: [(owner: SymbolDeclaration.ID, name: String, isIndirect: Bool, location: String)] = []
+        for descriptorSymbol in Set(enumDescriptorSymbols).sorted() {
+            if let coverage = descriptorSymbolTargets?[descriptorSymbol], coverage.isDisjoint(with: selectedTargets) { continue }
+            try Task.checkCancellation()
+            do {
+                guard selectedTargets == [identity.target] else {
+                    throw ReadError.platformOrArchMismatch(expect: selectedTargets, real: identity.target)
+                }
+                let tree = try SwiftSymbol(descriptorSymbol)
+                guard let descriptor = tree.children.first, descriptor.kind == .nominalTypeDescriptor,
+                      let type = descriptor.children.first,
+                      let enumeration = type.kind == .type ? type.children.first : type, enumeration.kind == .enum else {
+                    throw EnumCaseMetadataReader.ReadError.invalidEnumDescriptor
+                }
+                let records = try EnumCaseMetadataReader(metadata: reader).read(at: symbol(descriptorSymbol), enumeration: enumeration)
+                let owner = SymbolDeclaration.ID(structuralKey: enumeration.declarationKey)
+                enumRecords += records.map { (owner, $0.name, $0.isIndirect, descriptorSymbol + ":" + $0.name) }
+            } catch is CancellationError { throw CancellationError() }
+            catch {
+                diagnostics.append(.init(kind: .incompleteDeclaration, message: "Enum case metadata recovery: \(error)",
+                                         mangledSymbols: [descriptorSymbol], declarationID: nil, severity: .warning))
+            }
+        }
         let source = SymbolEvidenceSource(kind: .loadedImage, location: location,
-                                          artifactIdentifier: identifier, lineageIdentifier: location + ":" + identifier)
+                                          artifactIdentifier: enumRecords.isEmpty ? identifier : identity.identifier,
+                                          lineageIdentifier: location + ":" + identity.identifier)
         // A loaded image's UUID identifies the host build. It cannot establish
         // that the runtime library was built from the caller's SDK version.
         let imageContext = IndexingContext(moduleName: context.moduleName, targets: selectedTargets)
         let evidence = recoveredTypes.map {
             SymbolEvidence(source: source, subject: .mangledSymbol($0.symbol),
                            fact: .opaqueReturnType($0.type), location: $0.symbol)
+        } + enumRecords.map {
+            SymbolEvidence(source: source, subject: .enumCase(owner: $0.owner, name: $0.name),
+                           fact: .enumCaseIndirectStorage(isIndirect: $0.isIndirect), location: $0.location)
         }
         return IndexingResult(source: source, context: imageContext, diagnostics: diagnostics, evidence: evidence)
     }
@@ -146,10 +176,10 @@ public struct LoadedImageSource: IndexingSource {
         case invalidImageMetadata
         case missingExportedDescriptor(String)
         case unsupportedArchitecture(CPU)
-        case platformOrArchMismatch(expect: Set<IndexingTarget>, real: IndexingTarget)
+        case platformOrArchMismatch(expect: Set<CompilerTarget>, real: CompilerTarget)
         
         var description: String {
-            func targetName(_ target: IndexingTarget) -> String {
+            func targetName(_ target: CompilerTarget) -> String {
                 let name = "\(target.architecture.rawValue)-\(target.platform.rawValue)"
                 switch target.environment {
                     case .native:
@@ -194,7 +224,7 @@ public struct LoadedImageSource: IndexingSource {
 }
 
 extension LoadedImageSource {
-    static func identity(of machO: some MachORepresentable) throws -> (target: IndexingTarget, identifier: String) {
+    static func identity(of machO: some MachORepresentable) throws -> (target: CompilerTarget, identifier: String) {
         guard machO.header.magic == .magic64 else { throw ReadError.unsupportedImageFormat }
         let architecture = try architecture(for: machO.header)
         let commands = machO.loadCommands
@@ -204,8 +234,8 @@ extension LoadedImageSource {
             throw ReadError.invalidImageMetadata
         }
         let identifier = uuid.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-        let targetPlatform: IndexingTarget.Platform
-        var environment = IndexingTarget.Environment.native
+        let targetPlatform: CompilerTarget.Platform
+        var environment = CompilerTarget.Environment.native
         switch platform {
             case .macOS:
                 targetPlatform = .macOS
@@ -242,7 +272,7 @@ extension LoadedImageSource {
         return (.init(architecture: architecture, platform: targetPlatform, environment: environment), identifier)
     }
     
-    static func architecture(for header: MachHeader) throws -> IndexingTarget.Architecture {
+    static func architecture(for header: MachHeader) throws -> CompilerTarget.Architecture {
         // MachOKit decodes CPU subtypes and their capability bits. Only target
         // spelling and the architectures supported by this reader live here.
         switch (header.cpuType, header.cpuSubType) {

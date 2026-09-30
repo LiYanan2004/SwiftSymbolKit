@@ -8,13 +8,13 @@ struct LoadedImageIdentityTests {
     func recognizesArm64eX1WithPointerAuthenticationCapabilities(subtype: UInt32) throws {
         try MachOImageFixture(cpuSubtype: cpu_subtype_t(bitPattern: subtype)).withImage { machO in
             let identity = try LoadedImageSource.identity(of: machO)
-            #expect(identity.target == (try IndexingTarget(parsing: "arm64e.x1-macos")))
+            #expect(identity.target == (try CompilerTarget(parsing: "arm64e.x1-macos")))
             #expect(identity.identifier == "00112233445566778899aabbccddeeff")
         }
     }
 
     @Test func preservesExistingArchitectures() throws {
-        let fixtures: [(cpu_type_t, cpu_subtype_t, IndexingTarget.Architecture)] = [
+        let fixtures: [(cpu_type_t, cpu_subtype_t, CompilerTarget.Architecture)] = [
             (CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64_ALL, .arm64),
             (CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64_V8, .arm64),
             (CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64E, .arm64e),
@@ -57,7 +57,7 @@ struct LoadedImageIdentityTests {
                                    (PLATFORM_MACCATALYST, "arm64-ios-macabi")] {
             try MachOImageFixture(platform: UInt32(platform)).withImage { image in
                 let identity = try LoadedImageSource.identity(of: image)
-                #expect(identity.target == (try IndexingTarget(parsing: target)))
+                #expect(identity.target == (try CompilerTarget(parsing: target)))
             }
         }
     }

@@ -17,6 +17,9 @@ public enum SymbolSupplementalFact: Equatable, Sendable {
     case defaultArgument(parameterIndex: Int, value: DefaultArgument)
     case genericParameterName(depth: Int, index: Int, name: String)
     case modifier(name: String, isPresent: Bool)
+    /// Effective case storage, including indirection inherited from its enum.
+    /// Kept separate from the spelling of an explicit `indirect` modifier.
+    case enumCaseIndirectStorage(isIndirect: Bool)
     /// A nil spelling records explicit absence. Missing evidence means unknown.
     case attribute(name: String, spelling: String?)
     /// Order is significant; an empty list records explicit absence.

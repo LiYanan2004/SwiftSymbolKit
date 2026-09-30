@@ -15,9 +15,9 @@ struct OpaqueRecoveryTests {
             "-module-cache-path", directory.appendingPathComponent("ModuleCache").path])
         let symbols = try run(["nm", "-gUj", library.path]).split(separator: "\n").map(String.init).filter { $0.hasPrefix("_$s") }
         #if arch(arm64)
-        let target = IndexingTarget(architecture: .arm64, platform: .macOS)
+        let target = CompilerTarget(architecture: .arm64, platform: .macOS)
         #else
-        let target = IndexingTarget(architecture: .x86_64, platform: .macOS)
+        let target = CompilerTarget(architecture: .x86_64, platform: .macOS)
         #endif
         let context = IndexingContext(moduleName: "OpaqueFixtures", targets: [target])
         let source = LoadedImageSource(imagePath: library.path, imageInstallName: "/unused/install/name",
@@ -60,7 +60,7 @@ struct OpaqueRecoveryTests {
         let iosLibrary = directory.appendingPathComponent("libOpaqueFixtures-ios.dylib")
         _ = try run(["vtool", "-set-build-version", "ios", "17.0", "18.0", "-replace",
             "-output", iosLibrary.path, library.path])
-        let iosTarget = IndexingTarget(architecture: target.architecture, platform: .iOS)
+        let iosTarget = CompilerTarget(architecture: target.architecture, platform: .iOS)
         let iosResult = try await LoadedImageSource(imagePath: iosLibrary.path,
             descriptorSymbols: source.descriptorSymbols.filter { $0.contains("6simple") },
             context: .init(moduleName: context.moduleName, targets: [iosTarget])).read()
@@ -72,7 +72,7 @@ struct OpaqueRecoveryTests {
         #expect(missing.evidence.isEmpty)
         #expect(missing.diagnostics.contains { $0.severity == .warning })
 
-        let otherTarget = IndexingTarget(architecture: target.architecture == .arm64 ? .x86_64 : .arm64, platform: .macOS)
+        let otherTarget = CompilerTarget(architecture: target.architecture == .arm64 ? .x86_64 : .arm64, platform: .macOS)
         let foreignDescriptor = "_$s14OpaqueFixtures7missingQryFQOMQ"
         var coverage = Dictionary(uniqueKeysWithValues: source.descriptorSymbols.map { ($0, Set([target, otherTarget])) })
         coverage[foreignDescriptor] = [otherTarget]

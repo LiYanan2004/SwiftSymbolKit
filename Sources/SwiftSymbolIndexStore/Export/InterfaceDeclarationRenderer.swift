@@ -269,6 +269,10 @@ fileprivate extension InterfaceDeclarationRenderer {
             }
             let visibility = DeclModifierListSyntax {
                 if !inProtocol { DeclModifierSyntax(name: .keyword(.public)) }
+                if hasModifier("final", declaration: declaration) { DeclModifierSyntax(name: .keyword(.final)) }
+                if declaration.kind == .enumeration, hasModifier("indirect", declaration: declaration) {
+                    DeclModifierSyntax(name: .keyword(.indirect))
+                }
             }
             let modifiers = DeclModifierListSyntax {
                 visibility
@@ -390,7 +394,12 @@ fileprivate extension InterfaceDeclarationRenderer {
                             }
                         })
                     }
-                    return DeclSyntax(EnumCaseDeclSyntax {
+                    let caseModifiers = DeclModifierListSyntax {
+                        if hasModifier("indirect", declaration: declaration), !hasIndirectEnumOwner(declaration) {
+                            DeclModifierSyntax(name: .keyword(.indirect))
+                        }
+                    }
+                    return DeclSyntax(EnumCaseDeclSyntax(modifiers: caseModifiers) {
                         EnumCaseElementSyntax(name: name, parameterClause: payloadClause)
                     })
                 }
@@ -586,6 +595,19 @@ fileprivate extension InterfaceDeclarationRenderer {
             }
         }
         for child in node.children { observeBoundTypes(child) }
+    }
+}
+
+private extension InterfaceDeclarationRenderer {
+    func hasModifier(_ name: String, declaration: SymbolDeclaration) -> Bool {
+        (index.resolvedFactsBySubject[.declaration(declaration.id)] ?? []).contains {
+            $0.fact == .modifier(name: name, isPresent: true)
+        }
+    }
+
+    func hasIndirectEnumOwner(_ declaration: SymbolDeclaration) -> Bool {
+        guard case .declaration(let owner) = declaration.context, let enumeration = index.declarationsByID[owner] else { return false }
+        return hasModifier("indirect", declaration: enumeration)
     }
 }
 

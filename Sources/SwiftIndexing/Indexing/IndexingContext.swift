@@ -1,10 +1,10 @@
 /// The identity and target coverage of a primary artifact or supplemental source.
 public struct IndexingContext: Equatable, Sendable {
     public let moduleName: String
-    public let targets: Set<IndexingTarget>
+    public let targets: Set<CompilerTarget>
     public let sdkIdentifier: String?
 
-    public init(moduleName: String, targets: Set<IndexingTarget>, sdkIdentifier: String? = nil) {
+    public init(moduleName: String, targets: Set<CompilerTarget>, sdkIdentifier: String? = nil) {
         self.moduleName = moduleName
         self.targets = targets
         self.sdkIdentifier = sdkIdentifier

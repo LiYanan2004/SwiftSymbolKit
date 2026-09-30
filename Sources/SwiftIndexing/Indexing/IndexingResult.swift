@@ -13,7 +13,7 @@ public struct IndexingResult: Sendable {
     /// Runtime discovery alone must leave this empty.
     public let exportedSymbols: Set<String>
     /// Target coverage for each linker spelling in exportedSymbols.
-    public let exportedSymbolTargets: [String: Set<IndexingTarget>]
+    public let exportedSymbolTargets: [String: Set<CompilerTarget>]
     /// Includes unresolved source identities and source-only declarations such as aliases.
     /// Each item must have the same source as this indexing result.
     public let evidence: [SymbolEvidence]
@@ -24,7 +24,7 @@ public struct IndexingResult: Sendable {
                 protocolRequirements: [ProtocolConformanceRequirement] = [],
                 runtimeSymbols: [RuntimeSymbolRecord] = [], diagnostics: [SymbolDiagnostic] = [],
                 exportedSymbols: Set<String> = [],
-                exportedSymbolTargets: [String: Set<IndexingTarget>]? = nil, evidence: [SymbolEvidence] = []) {
+                exportedSymbolTargets: [String: Set<CompilerTarget>]? = nil, evidence: [SymbolEvidence] = []) {
         self.source = source
         self.context = context
         self.declarations = declarations

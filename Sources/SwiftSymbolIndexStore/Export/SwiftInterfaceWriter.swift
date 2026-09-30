@@ -78,6 +78,8 @@ public struct SwiftInterfaceWriter {
         try Task.checkCancellation()
         guard index.resolvedFactsBySubject.values.flatMap({ $0 }).allSatisfy({
             if case .opaqueReturnType = $0.fact { return true }
+            if case .modifier(let name, _) = $0.fact { return name == "final" || name == "indirect" }
+            if case .enumCaseIndirectStorage = $0.fact { return true }
             return false
         }), index.exportAssessmentsByDeclarationID.isEmpty else {
             fatalError("TODO: Render the store's reconciled declarations and facts using its export assessments.")

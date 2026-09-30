@@ -6,12 +6,12 @@ typealias TBD = TextBasedStub
 /// A YAML text-based dynamic library stub, retaining each symbol section's coverage.
 struct TextBasedStub: Decodable {
     let installName: String
-    let targets: Set<IndexingTarget>
+    let targets: Set<CompilerTarget>
     let exports: [SymbolSection]?
     let reexports: [SymbolSection]?
 
     struct SymbolSection: Decodable {
-        let targets: Set<IndexingTarget>
+        let targets: Set<CompilerTarget>
         let symbols: [String]?
         let weakDefinitionSymbols: [String]?
         let threadLocalSymbols: [String]?
@@ -29,10 +29,10 @@ struct TextBasedStub: Decodable {
 
         fileprivate init(from decoder: any Decoder, legacyPlatform: LegacyPlatform?) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            if let decodedTargets = try container.decodeIfPresent(Set<IndexingTarget>.self, forKey: .targets) {
+            if let decodedTargets = try container.decodeIfPresent(Set<CompilerTarget>.self, forKey: .targets) {
                 targets = decodedTargets
             } else if let legacyPlatform {
-                let architectures = try container.decode([IndexingTarget.Architecture].self, forKey: .archs)
+                let architectures = try container.decode([CompilerTarget.Architecture].self, forKey: .archs)
                 targets = try TextBasedStub.legacyTargets(architectures, platform: legacyPlatform)
             } else {
                 throw DecodingError.keyNotFound(CodingKeys.targets, .init(codingPath: decoder.codingPath,
@@ -54,10 +54,10 @@ struct TextBasedStub: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         installName = try container.decode(String.self, forKey: .installName)
         let legacyPlatform = try container.decodeIfPresent(LegacyPlatform.self, forKey: .platform)
-        if let decodedTargets = try container.decodeIfPresent(Set<IndexingTarget>.self, forKey: .targets) {
+        if let decodedTargets = try container.decodeIfPresent(Set<CompilerTarget>.self, forKey: .targets) {
             targets = decodedTargets
         } else {
-            let architectures = try container.decode([IndexingTarget.Architecture].self, forKey: .archs)
+            let architectures = try container.decode([CompilerTarget.Architecture].self, forKey: .archs)
             targets = try Self.legacyTargets(architectures, platform: container.decode(LegacyPlatform.self, forKey: .platform))
         }
         func sections(for key: CodingKeys) throws -> [SymbolSection]? {
@@ -83,8 +83,8 @@ struct TextBasedStub: Decodable {
     }
 
     /// Preserves linker spelling and unions coverage when a symbol occurs in multiple sections.
-    var swiftSymbolTargets: [String: Set<IndexingTarget>] {
-        var result: [String: Set<IndexingTarget>] = [:]
+    var swiftSymbolTargets: [String: Set<CompilerTarget>] {
+        var result: [String: Set<CompilerTarget>] = [:]
         let prefixes = ["_$s", "$s", "_$S", "$S", "_$e", "$e", "__T", "_T"]
         for section in (exports ?? []) + (reexports ?? []) {
             let symbols = (section.symbols ?? []) + (section.weakDefinitionSymbols ?? []) + (section.threadLocalSymbols ?? [])
@@ -120,12 +120,12 @@ struct TextBasedStub: Decodable {
         }
     }
 
-    private static func legacyTargets(_ architectures: [IndexingTarget.Architecture], platform: LegacyPlatform) throws -> Set<IndexingTarget> {
+    private static func legacyTargets(_ architectures: [CompilerTarget.Architecture], platform: LegacyPlatform) throws -> Set<CompilerTarget> {
         try Set(architectures.map { architecture in
-            let target = try IndexingTarget(parsing: "\(architecture.rawValue)-\(platform.rawValue)")
+            let target = try CompilerTarget(parsing: "\(architecture.rawValue)-\(platform.rawValue)")
             if [.i386, .x86_64, .x86_64h].contains(architecture),
                [.iOS, .tvOS, .watchOS].contains(target.platform), target.environment == .native {
-                return IndexingTarget(architecture: architecture, platform: target.platform, environment: .simulator)
+                return CompilerTarget(architecture: architecture, platform: target.platform, environment: .simulator)
             }
             return target
         })

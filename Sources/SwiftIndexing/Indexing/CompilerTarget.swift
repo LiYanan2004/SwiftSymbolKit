@@ -1,6 +1,7 @@
-/// Architecture, operating system and runtime environment used for source matching.
-/// Deployment versions remain artifact metadata and do not affect this identity.
-public struct IndexingTarget: Hashable, Sendable, Decodable {
+/// A normalized compiler target identified by architecture, operating system,
+/// and runtime environment.
+/// Deployment versions remain artifact metadata and do not affect target identity.
+public struct CompilerTarget: Hashable, Sendable, Decodable {
     public enum Architecture: String, Hashable, Sendable, Decodable {
         case i386, x86_64, x86_64h
         case armv4t, armv5, armv6, armv7, armv7s, armv7k

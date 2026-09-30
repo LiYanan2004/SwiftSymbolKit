@@ -41,7 +41,7 @@ struct LoadedImageSourceTests {
     }
 
     @Test func reportsMissingCacheImage() async throws {
-        let context = IndexingContext(moduleName: "Missing", targets: [try IndexingTarget(parsing: "arm64-macos")])
+        let context = IndexingContext(moduleName: "Missing", targets: [try CompilerTarget(parsing: "arm64-macos")])
         do {
             _ = try await LoadedImageSource(imageInstallName: "/missing/library.dylib",
                 descriptorSymbols: [], context: context).read()
@@ -53,37 +53,37 @@ struct LoadedImageSourceTests {
 
     @Test func reportsPlatformMismatchForIPhoneOSTarget() throws {
         let error = LoadedImageSource.ReadError.platformOrArchMismatch(
-            expect: [try IndexingTarget(parsing: "arm64-ios")],
-            real: try IndexingTarget(parsing: "arm64-macos"))
+            expect: [try CompilerTarget(parsing: "arm64-ios")],
+            real: try CompilerTarget(parsing: "arm64-macos"))
         #expect(error.description == "Loaded MachO Image mismatch: expected [arm64-ios], but get arm64-macos")
     }
 
     @Test func reportsArchitectureMismatch() throws {
         let error = LoadedImageSource.ReadError.platformOrArchMismatch(
-            expect: [try IndexingTarget(parsing: "arm64e.x1-macos")],
-            real: try IndexingTarget(parsing: "arm64-macos"))
+            expect: [try CompilerTarget(parsing: "arm64e.x1-macos")],
+            real: try CompilerTarget(parsing: "arm64-macos"))
         #expect(error.description == "Loaded MachO Image mismatch: expected [arm64e.x1-macos], but get arm64-macos")
     }
 
     @Test(arguments: ["simulator", "macabi"])
     func reportsEnvironmentMismatch(environment: String) throws {
         let error = LoadedImageSource.ReadError.platformOrArchMismatch(
-            expect: [try IndexingTarget(parsing: "arm64-ios-\(environment)")],
-            real: try IndexingTarget(parsing: "arm64-ios"))
+            expect: [try CompilerTarget(parsing: "arm64-ios-\(environment)")],
+            real: try CompilerTarget(parsing: "arm64-ios"))
         #expect(error.description == "Loaded MachO Image mismatch: expected [arm64-ios-\(environment)], but get arm64-ios")
     }
 
     @Test func reportsEveryExpectedTargetInStableOrder() throws {
         let error = LoadedImageSource.ReadError.platformOrArchMismatch(
-            expect: [try IndexingTarget(parsing: "arm64e-ios"), try IndexingTarget(parsing: "arm64-ios")],
-            real: try IndexingTarget(parsing: "arm64e-macos"))
+            expect: [try CompilerTarget(parsing: "arm64e-ios"), try CompilerTarget(parsing: "arm64-ios")],
+            real: try CompilerTarget(parsing: "arm64e-macos"))
         #expect(error.description == "Loaded MachO Image mismatch: expected [arm64-ios, arm64e-ios], but get arm64e-macos")
     }
 
     @Test func preservesTargetCombinations() throws {
         let error = LoadedImageSource.ReadError.platformOrArchMismatch(
-            expect: [try IndexingTarget(parsing: "arm64-ios"), try IndexingTarget(parsing: "x86_64-macos")],
-            real: try IndexingTarget(parsing: "arm64-macos"))
+            expect: [try CompilerTarget(parsing: "arm64-ios"), try CompilerTarget(parsing: "x86_64-macos")],
+            real: try CompilerTarget(parsing: "arm64-macos"))
         #expect(error.description == "Loaded MachO Image mismatch: expected [arm64-ios, x86_64-macos], but get arm64-macos")
     }
 }
