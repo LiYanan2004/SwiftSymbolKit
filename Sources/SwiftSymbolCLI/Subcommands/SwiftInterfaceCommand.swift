@@ -17,65 +17,119 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "The output file path. Defaults to standard output.")
     var output: String?
     
-    @Flag(
-        inversion: .prefixedNo,
-        help: "Try to recover opaque type conformances from MachO images."
-    )
-    var parseOpaqueReturnType = true
+    @OptionGroup(title: "Parsing options")
+    var parsingOptions: ParsingOptions
+
+    @OptionGroup(title: "Mach-O input")
+    var machOInputOptions: MachOInputOptions
+
+    private var textBasedStub: TextBasedStub!
     
-    @Option(help: "A Mach-O file to parse for opaque recovery. Defaults to the current system dyld shared cache.")
-    var imagePath: String?
+    mutating func validate() throws {
+        if machOInputOptions.usesDyldSharedCache, machOInputOptions.imagePath != nil {
+            throw ValidationError("--uses-dyld-shared-cache and --image-path are mutually exclusive.")
+        }
+
+        if parsingOptions.parseOpaqueReturnType, machOInputOptions.imagePath == nil, !machOInputOptions.usesDyldSharedCache {
+            throw ValidationError("--parse-opaque-return-type requires --image-path or --uses-dyld-shared-cache.")
+        }
+        
+        if machOInputOptions.usesDyldSharedCache || machOInputOptions.imagePath != nil,
+           !parsingOptions.parseOpaqueReturnType, !parsingOptions.parseContextualKeyword {
+            throw ValidationError("Metadata sources require --parse-opaque-return-type or --parse-contextual-keyword.")
+        }
+        
+        let inputURL = URL(fileURLWithPath: input.expandingTildeInPath)
+        if let output {
+            let outputURL = URL(fileURLWithPath: output.expandingTildeInPath)
+            guard outputURL.standardizedFileURL.resolvingSymlinksInPath() != inputURL.standardizedFileURL.resolvingSymlinksInPath() else {
+                throw ValidationError("The output file must differ from the input TBD file.")
+            }
+        }
+        
+        let stub = try TextBasedStub(yaml: String(contentsOf: inputURL, encoding: .utf8))
+        guard !stub.swiftSymbolTargets.isEmpty else {
+            throw ValidationError("The TBD file contains no exported Swift symbols.")
+        }
+        textBasedStub = stub
+    }
     
     mutating func run() async throws {
-        let inputURL = URL(fileURLWithPath: (input as NSString).expandingTildeInPath)
-        let stub = try TextBasedStub(yaml: String(contentsOf: inputURL, encoding: .utf8))
-        if imagePath != nil, !parseOpaqueReturnType {
-            throw ValidationError("--image-path requires --parse-opaque-return-type.")
+        // Recover image metadata
+        let requestedSymbols = textBasedStub.swiftSymbolTargets
+        let descriptors = requestedSymbols.filter { parsingOptions.parseOpaqueReturnType && $0.key.hasSuffix("QOMQ") }
+        let enumDescriptors = requestedSymbols.filter { parsingOptions.parseContextualKeyword && $0.key.hasSuffix("OMn") }
+        let metadataSymbols = descriptors.merging(enumDescriptors) { $0.union($1) }
+        let metadataIndexingResult: IndexingResult?
+        if machOInputOptions.usesDyldSharedCache || machOInputOptions.imagePath != nil, !metadataSymbols.isEmpty {
+            do {
+                metadataIndexingResult = try await LoadedImageSource(
+                    imagePath: machOInputOptions.imagePath.map(\.expandingTildeInPath),
+                    imageInstallName: textBasedStub.installName,
+                    descriptorSymbols: Array(descriptors.keys),
+                    context: .init(moduleName: textBasedStub.moduleName, targets: textBasedStub.targets),
+                    descriptorSymbolTargets: metadataSymbols,
+                    enumDescriptorSymbols: Array(enumDescriptors.keys)
+                ).read()
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                if !descriptors.isEmpty { throw error }
+                Loggers.interfaceGeneration.warning("Enum case metadata recovery: \(String(describing: error), privacy: .public)")
+                metadataIndexingResult = nil
+            }
+        } else {
+            metadataIndexingResult = nil
         }
-        let moduleName = inputURL.deletingPathExtension().lastPathComponent
-        let descriptors = stub.swiftSymbolTargets.filter { $0.key.hasSuffix("QOMQ") }
-        let opaqueIndexingResult: IndexingResult?
-        if parseOpaqueReturnType, !descriptors.isEmpty {
-            opaqueIndexingResult = try await LoadedImageSource(
-                imagePath: imagePath.map(\.expandingTildeInPath),
-                imageInstallName: stub.installName,
-                descriptorSymbols: Array(descriptors.keys),
-                context: .init(moduleName: moduleName, targets: stub.targets),
-                descriptorSymbolTargets: descriptors
-            ).read()
-        } else { opaqueIndexingResult = nil }
-        let selectedTargets = opaqueIndexingResult?.context.targets ?? stub.targets
-        let symbolTargets = stub.swiftSymbolTargets.compactMapValues { targets -> Set<CompilerTarget>? in
+        
+        // Select target coverage
+        let orderedTargets = Set(requestedSymbols.values.flatMap { $0 }).sorted { compilerTriple($0) < compilerTriple($1) }
+        let selectedTargets: Set<CompilerTarget>
+        if let metadataIndexingResult {
+            selectedTargets = metadataIndexingResult.context.targets
+        } else if parsingOptions.parseContextualKeyword,
+                  let selected = orderedTargets.first(where: { $0.environment == .native }) ?? orderedTargets.first {
+            selectedTargets = [selected]
+        } else {
+            selectedTargets = textBasedStub.targets
+        }
+        
+        let symbolTargets = textBasedStub.swiftSymbolTargets.compactMapValues { targets -> Set<CompilerTarget>? in
             let coverage = targets.intersection(selectedTargets)
             return coverage.isEmpty ? nil : coverage
         }
-        guard !symbolTargets.isEmpty else {
-            throw ValidationError("The TBD file contains no exported Swift symbols.")
-        }
         
+        // Index exported symbols
         let context = IndexingContext(
-            moduleName: moduleName,
+            moduleName: textBasedStub.moduleName,
             targets: selectedTargets
         )
         var store = SymbolIndexStore()
         try await mergeMangledSymbols(
             symbolTargets,
             context: context,
-            location: inputURL.absoluteString,
+            location: input.expandingTildeInPath,
             into: &store
         )
-        if let opaqueIndexingResult {
-            try store.merge(opaqueIndexingResult)
+        
+        // Merge supplemental evidence
+        if let metadataIndexingResult {
+            try store.merge(metadataIndexingResult)
+        }
+        if parsingOptions.parseContextualKeyword, let selected = selectedTargets.first, selectedTargets.count == 1 {
+            let configuration = try DeclarationModifierConfigurationResolver.resolve(
+                targetTriple: compilerTriple(selected), sdkPath: nil
+            )
+            let source = DeclarationModifierSource(configuration: configuration, context: context)
+            try await store.ingest(source)
         }
         
+        // Export
         let writer = SwiftInterfaceWriter(configuration: .init(moduleName: context.moduleName))
         let interface = try await writer.write(store)
         writeDiagnostics(interface.diagnostics)
         if let output {
-            let outputURL = URL(fileURLWithPath: (output as NSString).expandingTildeInPath)
-            guard outputURL.standardizedFileURL != inputURL.standardizedFileURL else {
-                throw ValidationError("The output file must differ from the input TBD file.")
-            }
+            let outputURL = URL(fileURLWithPath: output.expandingTildeInPath)
             try interface.text.write(to: outputURL, atomically: true, encoding: .utf8)
         } else {
             FileHandle.standardOutput.write(Data(interface.text.utf8))
@@ -83,7 +137,36 @@ struct SwiftInterfaceCommand: AsyncParsableCommand {
     }
 }
 
+extension SwiftInterfaceCommand {
+    struct ParsingOptions: ParsableArguments {
+        @Flag(help: "Try to recover opaque type conformances from MachO images.")
+        var parseOpaqueReturnType = false
+
+        @Flag(help: "Recover contextual keywords from SDK Swift modules and selected image metadata.")
+        var parseContextualKeyword = false
+    }
+
+    struct MachOInputOptions: ParsableArguments {
+        @Flag(help: "Use the current system dyld shared cache for metadata recovery.")
+        var usesDyldSharedCache = false
+
+        @Option(help: "A Mach-O file to parse for metadata recovery.")
+        var imagePath: String?
+    }
+}
+
 fileprivate extension SwiftInterfaceCommand {
+    func compilerTriple(_ target: CompilerTarget) -> String {
+        let operatingSystem = target.platform == .macOS ? "macosx" : target.platform.rawValue
+        let suffix: String
+        switch target.environment {
+            case .native: suffix = ""
+            case .simulator: suffix = "-simulator"
+            case .macCatalyst: suffix = "-macabi"
+        }
+        return target.architecture.rawValue + "-apple-" + operatingSystem + suffix
+    }
+    
     func mergeMangledSymbols(
         _ symbolTargets: [String: Set<CompilerTarget>],
         context: IndexingContext,
@@ -111,6 +194,7 @@ fileprivate extension SwiftInterfaceCommand {
                     ).parse()
                 }
             }
+            
             for (mangledSymbol, result) in zip(inputs, results) {
                 try Task.checkCancellation()
                 switch result {

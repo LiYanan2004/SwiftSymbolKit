@@ -1,4 +1,5 @@
 import SwiftIndexing
+import Foundation
 import Yams
 
 typealias TBD = TextBasedStub
@@ -9,6 +10,10 @@ struct TextBasedStub: Decodable {
     let targets: Set<CompilerTarget>
     let exports: [SymbolSection]?
     let reexports: [SymbolSection]?
+    
+    var moduleName: String {
+        URL(filePath: installName).lastPathComponent
+    }
 
     struct SymbolSection: Decodable {
         let targets: Set<CompilerTarget>
