@@ -39,17 +39,17 @@ public struct DeclarationModifierSource: IndexingSource {
         let output = directory.appendingPathComponent("api.json")
         let arguments = ["-dump-sdk", "-abort-on-module-fail", "-module", context.moduleName,
                          "-sdk", configuration.sdkPath, "-target", configuration.targetTriple]
-            + configuration.importSearchPaths.flatMap { ["-I", $0] }
-            + configuration.frameworkSearchPaths.flatMap { ["-F", $0] }
+        + configuration.importSearchPaths.flatMap { ["-I", $0] }
+        + configuration.frameworkSearchPaths.flatMap { ["-F", $0] }
         let compilerVersion = try invoke("swiftc", arguments: ["--version"], directory: directory)
         _ = try invoke("swift-api-digester", arguments: arguments + ["-o", output.path], directory: directory)
         let data = try Data(contentsOf: output)
         let producer = String(decoding: try JSONEncoder().encode(
             [configuration.toolchainDirectory ?? "xcrun", compilerVersion] + arguments), as: UTF8.self)
         let source = SymbolEvidenceSource(kind: .compilerDump, location: configuration.sdkPath,
-            artifactIdentifier: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
-            lineageIdentifier: configuration.sdkPath + ":" + context.moduleName + ":" + configuration.targetTriple,
-            producer: producer)
+                                          artifactIdentifier: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
+                                          lineageIdentifier: configuration.sdkPath + ":" + context.moduleName + ":" + configuration.targetTriple,
+                                          producer: producer)
         return try Self.parse(data, source: source, context: context)
     }
 
@@ -62,46 +62,63 @@ public struct DeclarationModifierSource: IndexingSource {
         guard root.kind == "Root", root.name == context.moduleName else { throw ReadError.invalidModule }
         var evidence: [SymbolEvidence] = []
         var diagnostics: [SymbolDiagnostic] = []
-        func visit(_ node: Node, path: String, indirectOwner: Bool, classOwner: Bool) throws {
+        func visit(_ node: Document.Node, path: String, indirectOwner: Bool, ownerKind: SymbolDeclaration.Kind?) throws {
             try Task.checkCancellation()
             let attributes = Set(node.declAttributes ?? [])
             let isEnum = node.declKind == "Enum"
-            let isClass = node.declKind == "Class"
             let isCase = node.declKind == "EnumElement"
-            let supportsFinal = isClass || (classOwner && ["Func", "Var", "Subscript"].contains(node.declKind ?? ""))
-            if isEnum || isCase || supportsFinal, let mangledName = node.mangledName {
+            if let expectedKind = node.declarationKind, let mangledName = node.mangledName {
                 do {
                     let symbol = isCase ? mangledName + "WC" : mangledName
                     let extracted = try MangledSymbolSource(exportedSymbols: [symbol], context: context).parse()
-                    let expectedKind: SymbolDeclaration.Kind = isEnum ? .enumeration : isCase ? .enumCase : isClass ? .class
-                        : node.declKind == "Var" ? .property : node.declKind == "Subscript" ? .subscript : .function
                     guard let declaration = extracted.declarations.last(where: { $0.kind == expectedKind && $0.evidence == .direct }) else {
                         throw ReadError.invalidDeclaration
                     }
                     let subject = SymbolEvidenceSubject.declaration(declaration.id)
-                    evidence.append(.init(source: source, subject: subject,
-                        fact: .modifier(name: supportsFinal ? "final" : "indirect",
-                                        isPresent: attributes.contains(supportsFinal ? "Final" : "Indirect")), location: path))
+                    for modifier in DeclarationModifier.allCases where modifier.supports(declaration, ownerKind: ownerKind) {
+                        guard let isPresent = node.isPresent(modifier) else { continue }
+                        evidence.append(.init(source: source, subject: subject,
+                                              fact: .modifier(name: modifier.rawValue, isPresent: isPresent), location: path))
+                    }
+                    if expectedKind == .class {
+                        if node.superclassUsr == nil || node.superclassNames?.first != nil {
+                            evidence.append(.init(source: source, subject: subject,
+                                                  fact: .superclass(typeName: node.superclassNames?.first), location: path))
+                        } else {
+                            diagnostics.append(.init(kind: .incompleteDeclaration,
+                                message: "Compiler superclass spelling is unavailable.", mangledSymbols: [mangledName],
+                                declarationID: nil, severity: .warning))
+                        }
+                    }
+                    if expectedKind == .property, let ownership = node.ownership, (1...3).contains(ownership) {
+                        evidence.append(.init(source: source, subject: subject,
+                                              fact: .storedProperty(isMutable: node.isLet != true), location: path))
+                    }
+                    if let ownership = node.ownership, !(0...3).contains(ownership) {
+                        diagnostics.append(.init(kind: .incompleteDeclaration,
+                                                 message: "Unknown compiler reference ownership: \(ownership).", mangledSymbols: [mangledName],
+                                                 declarationID: nil, severity: .warning))
+                    }
                     if isCase {
                         let hasPayload = declaration.signature.map(Self.hasEnumPayload) ?? false
                         evidence.append(.init(source: source, subject: subject,
-                            fact: .enumCaseIndirectStorage(isIndirect: hasPayload && (indirectOwner || attributes.contains("Indirect"))),
-                            location: path))
+                                              fact: .enumCaseIndirectStorage(isIndirect: hasPayload && (indirectOwner || attributes.contains("Indirect"))),
+                                              location: path))
                     }
                 } catch is CancellationError { throw CancellationError() }
                 catch {
                     diagnostics.append(.init(kind: .incompleteDeclaration,
-                        message: "Declaration modifier recovery: \(error)", mangledSymbols: [mangledName],
-                        declarationID: nil, severity: .warning))
+                                             message: "Declaration modifier recovery: \(error)", mangledSymbols: [mangledName],
+                                             declarationID: nil, severity: .warning))
                 }
             }
             for (position, child) in (node.children ?? []).enumerated() {
                 try visit(child, path: path + "/children/\(position)",
                           indirectOwner: isEnum && attributes.contains("Indirect"),
-                          classOwner: isClass)
+                          ownerKind: node.declarationKind)
             }
         }
-        try visit(root, path: "/ABIRoot", indirectOwner: false, classOwner: false)
+        try visit(root, path: "/ABIRoot", indirectOwner: false, ownerKind: nil)
         return .init(source: source, context: context, diagnostics: diagnostics, evidence: evidence)
     }
 
@@ -112,14 +129,77 @@ public struct DeclarationModifierSource: IndexingSource {
         return node.children.contains(where: hasEnumPayload)
     }
 
-    private struct Document: Decodable { let ABIRoot: Node }
-    private struct Node: Decodable {
-        let kind: String
-        let name: String?
-        let declKind: String?
-        let mangledName: String?
-        let declAttributes: [String]?
-        let children: [Node]?
+    private struct Document: Decodable {
+        let ABIRoot: Node
+
+        struct Node: Decodable {
+            let kind: String
+            let name: String?
+            let declKind: String?
+            let mangledName: String?
+            let declAttributes: [String]?
+            let children: [Node]?
+            let isOpen: Bool?
+            let isLet: Bool?
+            let ownership: Int?
+            let initializerKind: String?
+            let functionSelfKind: String?
+            let superclassUsr: String?
+            let superclassNames: [String]?
+
+            private enum CodingKeys: String, CodingKey {
+                case kind, name, declKind, mangledName, declAttributes, children, isOpen, isLet, ownership
+                case superclassUsr, superclassNames
+                case initializerKind = "init_kind"
+                case functionSelfKind = "funcSelfKind"
+            }
+
+            var declarationKind: SymbolDeclaration.Kind? {
+                switch declKind {
+                    case "Class": return .class
+                    case "Struct": return .structure
+                    case "Enum": return .enumeration
+                    case "Protocol": return .protocol
+                    case "Func": return .function
+                    case "Var": return .property
+                    case "Subscript": return .subscript
+                    case "Constructor": return .initializer
+                    case "EnumElement": return .enumCase
+                    default: return nil
+                }
+            }
+
+            func isPresent(_ modifier: DeclarationModifier) -> Bool? {
+                let attributes = Set(declAttributes ?? [])
+                switch modifier {
+                    case .final: return attributes.contains("Final")
+                    case .indirect: return attributes.contains("Indirect")
+                    case .open: return isOpen == true
+                    case .required: return attributes.contains("Required")
+                    case .override: return attributes.contains("Override")
+                    case .lazy: return attributes.contains("Lazy")
+                    case .dynamic: return attributes.contains("Dynamic")
+                    case .convenience:
+                        switch initializerKind {
+                            case "Convenience", "ConvenienceFactory": return true
+                            case "Designated", "Factory": return false
+                            default: return nil
+                        }
+                    case .mutating:
+                        switch functionSelfKind {
+                            case "Mutating": return true
+                            case "NonMutating": return false
+                            default: return nil
+                        }
+                    case .weak, .unowned, .unownedUnsafe:
+                        // ReferenceOwnership in swift/AST/Ownership.h and ReferenceStorage.def:
+                        // Strong = 0, Weak = 1, Unowned = 2, Unmanaged = 3.
+                        let value = ownership ?? 0
+                        guard (0...3).contains(value) else { return nil }
+                        return value == (modifier == .weak ? 1 : modifier == .unowned ? 2 : 3)
+                }
+            }
+        }
     }
 
     public enum ReadError: Error {

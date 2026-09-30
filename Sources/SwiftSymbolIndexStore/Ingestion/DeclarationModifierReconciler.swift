@@ -67,8 +67,12 @@ struct DeclarationModifierReconciler {
     }
 
     private func field(_ fact: SymbolSupplementalFact) -> String {
-        if case .modifier(let name, _) = fact { return name }
-        return "indirect storage"
+        switch fact {
+        case .modifier(let name, _): return name
+        case .storedProperty: return "property storage"
+        case .superclass: return "superclass"
+        default: return "indirect storage"
+        }
     }
 
     private func confidence(_ evidence: [SymbolEvidence]) -> SymbolSupplementalFactConfidence {

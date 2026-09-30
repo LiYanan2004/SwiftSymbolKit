@@ -71,6 +71,7 @@ package extension SwiftSymbol {
         case .objCAttribute: return true
         case .nonObjCAttribute: return true
         case .dynamicAttribute: return true
+        case .dynamicallyReplaceableFunctionKey, .dynamicallyReplaceableFunctionVar, .dynamicallyReplaceableFunctionImpl: return true
         case .directMethodReferenceAttribute: return true
         default: return false
         }

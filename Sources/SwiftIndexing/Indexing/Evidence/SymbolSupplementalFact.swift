@@ -17,6 +17,10 @@ public enum SymbolSupplementalFact: Equatable, Sendable {
     case defaultArgument(parameterIndex: Int, value: DefaultArgument)
     case genericParameterName(depth: Int, index: Int, name: String)
     case modifier(name: String, isPresent: Bool)
+    /// Compiler-verified storage needed to emit reference ownership modifiers.
+    case storedProperty(isMutable: Bool)
+    /// Fully qualified compiler spelling; nil records a class with no superclass.
+    case superclass(typeName: String?)
     /// Effective case storage, including indirection inherited from its enum.
     /// Kept separate from the spelling of an explicit `indirect` modifier.
     case enumCaseIndirectStorage(isIndirect: Bool)

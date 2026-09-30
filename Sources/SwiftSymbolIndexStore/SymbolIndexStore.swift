@@ -191,7 +191,7 @@ public struct SymbolIndexStore: Sendable {
 fileprivate extension SymbolIndexStore {
     static func isModifierFact(_ fact: SymbolSupplementalFact) -> Bool {
         switch fact {
-        case .modifier, .enumCaseIndirectStorage: return true
+        case .modifier, .enumCaseIndirectStorage, .storedProperty, .superclass: return true
         default: return false
         }
     }
@@ -208,7 +208,8 @@ fileprivate extension SymbolIndexStore {
         }
         guard result.evidence.allSatisfy({ observation in
             switch (result.source.kind, observation.subject, observation.fact) {
-            case (.compilerDump, .declaration, .modifier(let name, _)): return name == "final" || name == "indirect"
+            case (.compilerDump, .declaration, .modifier(let name, _)): return DeclarationModifier(rawValue: name) != nil
+            case (.compilerDump, .declaration, .storedProperty), (.compilerDump, .declaration, .superclass): return true
             case (.compilerDump, .declaration, .enumCaseIndirectStorage), (.loadedImage, .enumCase, .enumCaseIndirectStorage): return true
             default: return false
             }
@@ -247,14 +248,17 @@ fileprivate extension SymbolIndexStore {
         switch fact {
         case .modifier("indirect", _): return declaration.kind == .enumeration || declaration.kind == .enumCase
         case .enumCaseIndirectStorage: return declaration.kind == .enumCase
-        case .modifier("final", _):
-            if declaration.kind == .class { return true }
-            guard [.function, .property, .subscript].contains(declaration.kind) else { return false }
+        case .storedProperty: return declaration.kind == .property
+        case .superclass: return declaration.kind == .class
+        case .modifier(let name, _):
+            guard let modifier = DeclarationModifier(rawValue: name) else { return false }
+            let ownerKind: SymbolDeclaration.Kind?
             switch declaration.context {
-            case .declaration(let owner): return declarationsByID[owner]?.kind == .class
-            case .typeExtension(let context): return declarationsByID[context.extendedType]?.kind == .class
-            default: return false
+            case .declaration(let owner): ownerKind = declarationsByID[owner]?.kind
+            case .typeExtension(let context): ownerKind = declarationsByID[context.extendedType]?.kind
+            default: ownerKind = nil
             }
+            return modifier.supports(declaration, ownerKind: ownerKind)
         default: return false
         }
     }

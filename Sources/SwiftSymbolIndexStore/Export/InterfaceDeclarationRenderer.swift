@@ -248,6 +248,9 @@ fileprivate extension InterfaceDeclarationRenderer {
     ) async throws -> DeclSyntax {
         try Task.checkCancellation()
         do {
+            if hasModifier("override", declaration: declaration), !hasResolvedSuperclassOwner(declaration) {
+                throw InterfaceTypeRenderer.RenderingError("Override requires a resolved superclass")
+            }
             if let nameNode = declaration.nameNode, [.privateDeclName, .localDeclName].contains(nameNode.kind) {
                 diagnose(declaration, "Private or local declaration is emitted with its source name and public visibility; the original discriminator remains in the index.", severity: .warning)
             }
@@ -267,16 +270,37 @@ fileprivate extension InterfaceDeclarationRenderer {
                !InterfaceConstrainedExistential.occurrences(in: signature).isEmpty {
                 diagnose(declaration, "Primary associated type syntax follows encoded constraint order; the protocol's primary associated type declaration and source order are unavailable from mangling.", severity: .warning)
             }
+            let isNonFinalClassMember = ownerDeclaration(of: declaration)?.kind == .class
+                && (index.resolvedFactsBySubject[.declaration(declaration.id)] ?? []).contains {
+                    $0.fact == .modifier(name: "final", isPresent: false)
+                }
+            let usesClassDispatch = declaration.isStatic && (hasModifier("open", declaration: declaration)
+                || hasModifier("override", declaration: declaration) || isNonFinalClassMember)
             let visibility = DeclModifierListSyntax {
-                if !inProtocol { DeclModifierSyntax(name: .keyword(.public)) }
-                if hasModifier("final", declaration: declaration) { DeclModifierSyntax(name: .keyword(.final)) }
+                if !inProtocol {
+                    DeclModifierSyntax(name: .keyword(hasModifier("open", declaration: declaration) ? .open : .public))
+                }
+                for (modifier, keyword) in [
+                    ("final", Keyword.final), ("override", .override), ("required", .required),
+                    ("convenience", .convenience), ("dynamic", .dynamic), ("mutating", .mutating),
+                    ("weak", .weak), ("unowned", .unowned),
+                ] where hasModifier(modifier, declaration: declaration)
+                    && (modifier != "final" || !declaration.isStatic || usesClassDispatch) {
+                    DeclModifierSyntax(name: .keyword(keyword))
+                }
+                if hasModifier("unowned(unsafe)", declaration: declaration) {
+                    DeclModifierSyntax(name: .keyword(.unowned), detail: DeclModifierDetailSyntax(detail: .identifier("unsafe")))
+                }
+                // Swift's module interface printer excludes Lazy and emits accessors.
                 if declaration.kind == .enumeration, hasModifier("indirect", declaration: declaration) {
                     DeclModifierSyntax(name: .keyword(.indirect))
                 }
             }
             let modifiers = DeclModifierListSyntax {
                 visibility
-                if declaration.isStatic { DeclModifierSyntax(name: .keyword(.static)) }
+                if declaration.isStatic {
+                    DeclModifierSyntax(name: .keyword(usesClassDispatch ? .class : .static))
+                }
             }
             switch declaration.kind {
             case .structure, .enumeration, .class, .protocol:
@@ -290,14 +314,21 @@ fileprivate extension InterfaceDeclarationRenderer {
                         startingAt: types.genericParametersByDepth.count, avoiding: reservedNames)
                     diagnose(declaration, "Generic type parameter names \(genericClause?.formatted().description ?? "") and count are inferred; declaration constraints may be missing.", severity: .info)
                 }
-                var inheritedProtocols: [TypeSyntax] = []
+                var inheritedDeclarationTypes: [TypeSyntax] = []
+                if declaration.kind == .class {
+                    for observation in index.resolvedFactsBySubject[.declaration(declaration.id)] ?? [] {
+                        if case .superclass(let typeName?) = observation.fact {
+                            inheritedDeclarationTypes.append(try types.compilerType(typeName))
+                        }
+                    }
+                }
                 var requirements = try types.requirements(enumCaseRequirementsByTypeID[declaration.id].map {
                     DemangledNode(kind: .dependentGenericSignature, children: $0)
                 })
                 for requirement in requirementsByProtocolID[declaration.id] ?? [] {
                     let protocolType = try types.type(requirement.requiredProtocol)
                     if requirement.associatedTypePath.isEmpty {
-                        inheritedProtocols.append(protocolType)
+                        inheritedDeclarationTypes.append(protocolType)
                     } else {
                         var associatedType = TypeSyntax(IdentifierTypeSyntax(name: .keyword(.Self)))
                         for component in requirement.associatedTypePath {
@@ -310,7 +341,7 @@ fileprivate extension InterfaceDeclarationRenderer {
                             ConformanceRequirementSyntax(leftType: associatedType, rightType: protocolType))))
                     }
                 }
-                let inheritance = inheritanceClause(inheritedProtocols)
+                let inheritance = inheritanceClause(inheritedDeclarationTypes)
                 let name = try InterfaceTypeRenderer.identifier(declaration.name)
                 let body = members(try await renderDeclarations(index.members(of: declaration.id).filter {
                     if case .declaration(let parent) = $0.context { return parent == declaration.id }
@@ -359,9 +390,17 @@ fileprivate extension InterfaceDeclarationRenderer {
                 return DeclSyntax(DeinitializerDeclSyntax())
             case .property:
                 guard let signature = declaration.signature else { throw InterfaceTypeRenderer.RenderingError("Missing property type") }
-                return DeclSyntax(try VariableDeclSyntax(modifiers: modifiers, bindingSpecifier: .keyword(.var)) {
+                let storage = (index.resolvedFactsBySubject[.declaration(declaration.id)] ?? []).compactMap { observation -> Bool? in
+                    if case .storedProperty(let isMutable) = observation.fact { return isMutable }
+                    return nil
+                }.first
+                if ["weak", "unowned", "unowned(unsafe)"].contains(where: { hasModifier($0, declaration: declaration) }), storage == nil {
+                    throw InterfaceTypeRenderer.RenderingError("Reference ownership requires resolved property storage")
+                }
+                let accessorBlock = storage == nil ? accessors(declaration) : nil
+                return DeclSyntax(try VariableDeclSyntax(modifiers: modifiers, bindingSpecifier: .keyword(storage == false ? .let : .var)) {
                     try PatternBindingSyntax(pattern: IdentifierPatternSyntax(identifier: InterfaceTypeRenderer.identifier(declaration.name)),
-                        typeAnnotation: TypeAnnotationSyntax(type: types.type(signature)), accessorBlock: accessors(declaration))
+                        typeAnnotation: TypeAnnotationSyntax(type: types.type(signature)), accessorBlock: accessorBlock)
                 })
             case .function, .initializer, .subscript, .enumCase:
                 guard let signature = declaration.signature else { throw InterfaceTypeRenderer.RenderingError("Missing callable signature") }
@@ -455,7 +494,9 @@ fileprivate extension InterfaceDeclarationRenderer {
             diagnose(declaration, "Addressor mutating/nonmutating modifiers are unavailable from exported symbols.", severity: .warning)
         }
         return AccessorBlockSyntax(accessors: .accessors(AccessorDeclListSyntax {
-            AccessorDeclSyntax(accessorSpecifier: .keyword(hasAddressor ? .unsafeAddress : .get),
+            AccessorDeclSyntax(modifier: hasModifier("lazy", declaration: declaration) && hasValueTypeOwner(declaration) && !declaration.isStatic
+                ? DeclModifierSyntax(name: .keyword(.mutating)) : nil,
+                accessorSpecifier: .keyword(hasAddressor ? .unsafeAddress : .get),
                 effectSpecifiers: effects.map { AccessorEffectSpecifiersSyntax(asyncSpecifier: $0.asyncSpecifier, throwsClause: $0.throwsClause) })
             if hasMutableAddressor {
                 AccessorDeclSyntax(accessorSpecifier: .keyword(.unsafeMutableAddress))
@@ -599,6 +640,28 @@ fileprivate extension InterfaceDeclarationRenderer {
 }
 
 private extension InterfaceDeclarationRenderer {
+    func ownerDeclaration(of declaration: SymbolDeclaration) -> SymbolDeclaration? {
+        let owner: SymbolDeclaration.ID
+        switch declaration.context {
+        case .declaration(let identifier): owner = identifier
+        case .typeExtension(let context): owner = context.extendedType
+        default: return nil
+        }
+        return index.declarationsByID[owner]
+    }
+
+    func hasResolvedSuperclassOwner(_ declaration: SymbolDeclaration) -> Bool {
+        guard let owner = ownerDeclaration(of: declaration)?.id else { return false }
+        return (index.resolvedFactsBySubject[.declaration(owner)] ?? []).contains {
+            if case .superclass(.some) = $0.fact { return true }
+            return false
+        }
+    }
+
+    func hasValueTypeOwner(_ declaration: SymbolDeclaration) -> Bool {
+        ownerDeclaration(of: declaration).map { [.structure, .enumeration].contains($0.kind) } == true
+    }
+
     func hasModifier(_ name: String, declaration: SymbolDeclaration) -> Bool {
         (index.resolvedFactsBySubject[.declaration(declaration.id)] ?? []).contains {
             $0.fact == .modifier(name: name, isPresent: true)
